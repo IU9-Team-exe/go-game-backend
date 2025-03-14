@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
+	"github.com/gorilla/mux"
 )
 
 func main() {
-	s := "gopher"
-	fmt.Println("Hello and welcome, %s!", s)
+	r := mux.NewRouter()
+	//r.HandleFunc("/", HomeHandler).Methods("GET")
 }
