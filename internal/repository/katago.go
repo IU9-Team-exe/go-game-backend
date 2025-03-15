@@ -3,7 +3,6 @@ package repository
 import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"net/http"
 	"os"
 	"sync"
 
@@ -32,7 +31,6 @@ func NewKatagoRepository(cfg *bootstrap.Config, log *zap.SugaredLogger) (*Katago
 		log:       log,
 		redis:     adapters.NewAdapterRedis(cfg),
 		mongo:     adapters.NewAdapterMongo(cfg),
-		httpCli:   &http.Client{}, // стандартный клиент
 		kataGoURL: kataGoURL,
 	}, nil
 }
