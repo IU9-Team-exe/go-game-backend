@@ -5,15 +5,15 @@ import (
 	"go.uber.org/zap"
 	"net/http"
 	"team_exe/internal/bootstrap"
-	"team_exe/internal/domain"
+	"team_exe/internal/domain/game"
 	katagoUC "team_exe/internal/usecase/katago"
 	katagoProto "team_exe/microservices/proto"
 )
 
-type GenerateMoveRequest domain.Moves
+type GenerateMoveRequest game.Moves
 
 type BotMoveResponse struct {
-	BotMove domain.Move `json:"bot_move"`
+	BotMove game.Move `json:"bot_move"`
 }
 type KatagoHandler struct {
 	cfg        bootstrap.Config
@@ -36,7 +36,7 @@ func (k *KatagoHandler) HandleGenerateMove(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var movesToBot domain.Moves
+	var movesToBot game.Moves
 	if err := json.NewDecoder(r.Body).Decode(&movesToBot); err != nil {
 		writeJSONError(k.log, w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
 		return

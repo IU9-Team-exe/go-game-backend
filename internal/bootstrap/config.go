@@ -10,6 +10,7 @@ type Config struct {
 	GpuServerPort string `mapstructure:"GPU_SERVER_PORT"`
 	KatagoBotUrl  string `mapstructure:"KATAGO_BOT_URL"`
 	RedisUrl      string `mapstructure:"REDIS_URL"`
+	MongoUri      string `mapstructure:"MONGO_URI"`
 }
 
 func Setup(cfgPath string) (*Config, error) {

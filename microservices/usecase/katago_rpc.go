@@ -2,12 +2,12 @@ package usecase
 
 import (
 	"context"
-	"team_exe/internal/domain"
+	"team_exe/internal/domain/game"
 	katagoRPC "team_exe/microservices/proto"
 )
 
 type KatagoStore interface {
-	GenerateMove(ctx context.Context, moves []string) (domain.BotResponse, error)
+	GenerateMove(ctx context.Context, moves []string) (game.BotResponse, error)
 }
 
 type KatagoUseCase struct {
@@ -41,7 +41,7 @@ func (k *KatagoUseCase) GenerateMove(ctx context.Context, in *katagoRPC.Moves) (
 	return resp, nil
 }
 
-func extractCoordinates(moves domain.Moves) []string {
+func extractCoordinates(moves game.Moves) []string {
 	coords := make([]string, 0)
 	for _, m := range moves.Moves {
 		coords = append(coords, m.Coordinates)
@@ -49,14 +49,14 @@ func extractCoordinates(moves domain.Moves) []string {
 	return coords
 }
 
-func ConvertRPCMovesToDomain(movesOld katagoRPC.Moves) domain.Moves {
-	domainMoves := make([]domain.Move, 0)
+func ConvertRPCMovesToDomain(movesOld katagoRPC.Moves) game.Moves {
+	domainMoves := make([]game.Move, 0)
 	for _, m := range movesOld.Moves {
-		move := domain.Move{
+		move := game.Move{
 			Coordinates: m.Coordinates,
 			Color:       m.Color,
 		}
 		domainMoves = append(domainMoves, move)
 	}
-	return domain.Moves{Moves: domainMoves}
+	return game.Moves{Moves: domainMoves}
 }

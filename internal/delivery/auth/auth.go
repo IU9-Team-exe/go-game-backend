@@ -6,21 +6,20 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"team_exe/internal/adapters"
 	"team_exe/internal/httpresponse"
 	repo "team_exe/internal/repository"
 	authUC "team_exe/internal/usecase/auth"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 type AuthHandler struct {
 	usecaseHandler *authUC.AuthUsecaseHandler
 }
 
-func NewMapAuthHandler(redis *redis.Client) *AuthHandler {
+func NewMapAuthHandler(redis *adapters.AdapterRedis) *AuthHandler {
 	return &AuthHandler{usecaseHandler: authUC.NewUserUsecaseHandler(repo.NewMapUserStorage(),
-		repo.NewSessionRedisStorage(redis))}
+		repo.NewSessionRedisStorage(redis.GetClient()))}
 }
 
 type loginRequest struct {

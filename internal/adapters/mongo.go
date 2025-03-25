@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -12,8 +13,9 @@ import (
 )
 
 type AdapterMongo struct {
-	*mongo.Database
-	cfg *bootstrap.Config
+	Client   *mongo.Client
+	Database *mongo.Database
+	cfg      *bootstrap.Config
 }
 
 func NewAdapterMongo(cfg *bootstrap.Config) *AdapterMongo {
@@ -23,23 +25,29 @@ func NewAdapterMongo(cfg *bootstrap.Config) *AdapterMongo {
 }
 
 func (a *AdapterMongo) Init(ctx context.Context) error {
-	uri := "mongodb://root:Artem557@localhost:8082/team_exe?authSource=admin"
+	clientOpts := options.Client().ApplyURI(a.cfg.MongoUri)
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
-	if err != nil {
-		log.Fatalf("Ошибка подключения к MongoDB: %v", err)
-	}
-
-	// Проверка подключения
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctxConnect, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	if err := client.Ping(ctx, nil); err != nil {
+	client, err := mongo.Connect(ctxConnect, clientOpts)
+	if err != nil {
+		return fmt.Errorf("ошибка подключения к MongoDB: %w", err)
+	}
+
+	if err = client.Ping(ctx, nil); err != nil {
 		log.Fatalf("Не удалось пропинговать MongoDB: %v", err)
 	}
 
 	a.Database = client.Database("team_exe")
 
 	log.Println("Успешно подключено к MongoDB")
+	return nil
+}
+
+func (a *AdapterMongo) Close(ctx context.Context) error {
+	if a.Client != nil {
+		return a.Client.Disconnect(ctx)
+	}
 	return nil
 }

@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -21,20 +22,22 @@ func NewAdapterRedis(cfg *bootstrap.Config) *AdapterRedis {
 }
 
 func (a *AdapterRedis) Init(ctx context.Context) error {
-	addr := "localhost:6379" // Укажите ваш адрес Redis
-	password := ""           // Укажите пароль, если есть
+	// Используем адрес из конфига
+	addr := a.cfg.RedisUrl
+	password := "" // если используешь пароль — добавь в cfg
+
 	a.client = redis.NewClient(&redis.Options{
 		Addr:     addr,
 		Password: password,
 		DB:       0,
 	})
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// Контекст с таймаутом
+	ctxPing, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	if err := a.client.Ping(ctx).Err(); err != nil {
-		log.Fatalf("Ошибка подключения к Redis: %v", err)
-		return err
+	if err := a.client.Ping(ctxPing).Err(); err != nil {
+		return fmt.Errorf("ошибка подключения к Redis: %w", err)
 	}
 
 	log.Println("Успешно подключено к Redis")
@@ -43,4 +46,11 @@ func (a *AdapterRedis) Init(ctx context.Context) error {
 
 func (a *AdapterRedis) GetClient() *redis.Client {
 	return a.client
+}
+
+func (a *AdapterRedis) Close(ctx context.Context) error {
+	if a.client != nil {
+		return a.client.Close()
+	}
+	return nil
 }

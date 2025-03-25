@@ -1,4 +1,4 @@
-package domain
+package game
 
 type Move struct {
 	Color       string `json:"color"`
