@@ -1,0 +1,25 @@
+FROM golang:1.24-alpine as build
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+COPY .env .env
+
+RUN go build -o katago_microservice ./microservices/cmd/katago/main.go
+
+# --- финальный слой ---
+FROM alpine:latest
+
+# рабочая директория, как у приложения
+WORKDIR /app/microservices/cmd/katago
+
+# копируем бинарь
+COPY --from=build /app/katago_microservice .
+
+# копируем .env в нужное место
+COPY --from=build /app/.env /app/.env
+
+EXPOSE 50051
+CMD ["./katago_microservice"]

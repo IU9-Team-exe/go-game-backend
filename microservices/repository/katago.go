@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"net/http"
-	"os"
 	"team_exe/internal/domain"
 
 	"team_exe/internal/adapters"
@@ -25,11 +24,7 @@ type KatagoRepository struct {
 }
 
 func NewKatagoRepository(cfg *bootstrap.Config, log *zap.SugaredLogger) *KatagoRepository {
-	kataGoURL := os.Getenv("KATAGO_URL_API")
-	if kataGoURL == "" {
-		kataGoURL = "http://127.0.0.1:8081" // пример
-	}
-
+	kataGoURL := cfg.KatagoBotUrl
 	return &KatagoRepository{
 		cfg:       cfg,
 		log:       log,
@@ -49,35 +44,36 @@ type SelectMoveRequest struct {
 	Moves     []string `json:"moves"`
 }
 
-func (k *KatagoRepository) GenerateMove(ctx context.Context, moves []string) (string, error) {
+func (k *KatagoRepository) GenerateMove(ctx context.Context, moves []string) (domain.BotResponse, error) {
 	reqBody, err := json.Marshal(SelectMoveRequest{
 		BoardSize: 19,
 		Moves:     moves,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return domain.BotResponse{}, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, k.kataGoURL, bytes.NewBuffer(reqBody))
+	k.log.Info(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return domain.BotResponse{}, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := k.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+		return domain.BotResponse{}, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return domain.BotResponse{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	var result domain.BotResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
+		return domain.BotResponse{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return result.BotMove, nil
+	return result, nil
 }

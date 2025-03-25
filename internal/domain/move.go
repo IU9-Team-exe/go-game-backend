@@ -22,3 +22,7 @@ type BotResponse struct {
 	Diagnostics Diagnostics `json:"diagnostics"`
 	RequestID   string      `json:"request_id"`
 }
+
+type Moves struct {
+	Moves []Move `json:"moves"`
+}

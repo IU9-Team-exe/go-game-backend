@@ -1,4 +1,4 @@
-package delivery
+package katago
 
 import (
 	"encoding/json"
@@ -6,26 +6,27 @@ import (
 	"net/http"
 	"team_exe/internal/bootstrap"
 	"team_exe/internal/domain"
-	"team_exe/internal/repository"
-	"team_exe/internal/usecase"
+	katagoUC "team_exe/internal/usecase/katago"
+	katagoProto "team_exe/microservices/proto"
 )
 
-type GenerateMoveRequest []domain.Move
+type GenerateMoveRequest domain.Moves
 
 type BotMoveResponse struct {
 	BotMove domain.Move `json:"bot_move"`
 }
 type KatagoHandler struct {
-	cfg      bootstrap.Config
-	log      *zap.SugaredLogger
-	katagoUC *usecase.KatagoUseCase
+	cfg        bootstrap.Config
+	log        *zap.SugaredLogger
+	katagoGRPC katagoProto.KatagoServiceClient
 }
 
-func NewKatago(cfg bootstrap.Config, log *zap.SugaredLogger, repo *repository.KatagoRepository) *KatagoHandler {
+func NewKatagoHandler(cfg bootstrap.Config, log *zap.SugaredLogger, katago katagoProto.KatagoServiceClient) *KatagoHandler {
+	//	repo := repository.NewKatagoRepository(&cfg, log)
 	return &KatagoHandler{
-		cfg:      cfg,
-		log:      log,
-		katagoUC: usecase.NewKatagoUseCase(repo),
+		cfg:        cfg,
+		log:        log,
+		katagoGRPC: katago,
 	}
 }
 
@@ -35,15 +36,15 @@ func (k *KatagoHandler) HandleGenerateMove(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var moves GenerateMoveRequest
-	if err := json.NewDecoder(r.Body).Decode(&moves); err != nil {
+	var movesToBot domain.Moves
+	if err := json.NewDecoder(r.Body).Decode(&movesToBot); err != nil {
 		writeJSONError(k.log, w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
 		return
 	}
 
 	ctx := r.Context()
 
-	botMove, err := k.katagoUC.GenMove(ctx, moves)
+	botMove, err := katagoUC.GenMove(ctx, movesToBot, k.katagoGRPC)
 	if err != nil {
 		k.log.Errorf("failed to generate bot move: %v", err)
 		writeJSONError(k.log, w, http.StatusInternalServerError, "Failed to generate bot move")
