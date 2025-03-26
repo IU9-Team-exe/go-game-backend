@@ -139,7 +139,7 @@ func (g *GameRepository) CalculateUserColor(ctx context.Context, gameKey string,
 	return "black"
 }
 
-func (g *GameRepository) GeyGameByGameKey(ctx context.Context, gameKey string) game.Game {
+func (g *GameRepository) GetGameByGameKey(ctx context.Context, gameKey string) game.Game {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -167,4 +167,61 @@ func (g *GameRepository) SaveSGFToRedis(key string, sgfText string) error {
 func (g *GameRepository) LoadSGFFromRedis(key string) (string, error) {
 	ctx := context.Background()
 	return g.redis.Get(ctx, key).Result()
+}
+
+func (g *GameRepository) GetAllActiveGames() ([]game.Game, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	collection := g.mongo.Collection("games")
+	filter := bson.M{
+		"status": "active",
+	}
+	var result []game.Game
+	cursor, err := collection.Find(ctx, filter)
+	if err != nil {
+		g.log.Error(err)
+		return result, err
+	}
+
+	defer cursor.Close(ctx)
+	for cursor.Next(ctx) {
+		var play game.Game
+		err = cursor.Decode(&play)
+		if err != nil {
+			g.log.Error(err)
+			return result, err
+		}
+		result = append(result, play)
+	}
+
+	return result, nil
+}
+
+func (g *GameRepository) GetActiveGameByUserId(ctx context.Context, userID string) ([]game.Game, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	collection := g.mongo.Collection("games")
+	filter := bson.M{
+		"$or": []bson.M{
+			{"player_black": userID},
+			{"player_white": userID},
+		},
+	}
+	var result []game.Game
+	cursor, err := collection.Find(ctx, filter)
+	if err != nil {
+		g.log.Error(err)
+		return result, err
+	}
+	defer cursor.Close(ctx)
+	for cursor.Next(ctx) {
+		var play game.Game
+		err = cursor.Decode(&play)
+		if err != nil {
+			g.log.Error(err)
+			return result, err
+		}
+		result = append(result, play)
+	}
+	return result, nil
 }

@@ -47,6 +47,8 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// проверка, что игрок свободен! TODO
+
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		g.log.Error("Failed to read body:", err)
@@ -70,9 +72,23 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 	if len(gameData.Users) != 1 {
 		g.log.Error("неверный json")
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Invalid JSON: "+string(bodyBytes))
+		return
 	}
 
 	ctx := r.Context()
+
+	alreadyIsInGame, err := g.gameUC.HasUserActiveGamesByUserId(ctx, gameData.Users[0].ID) // TODO: исправить этот лютый хардкод
+	if err != nil {
+		g.log.Error(err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: "+err.Error())
+		return
+	}
+	if alreadyIsInGame {
+		g.log.Error("пользователь уже состоит в игре!") //TODO добавить отображение id игры
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: уже состоит в игре")
+		return
+	}
+
 	err, gameKey := g.gameUC.CreateGame(ctx, gameData)
 	if err != nil {
 		g.log.Error(err)
@@ -93,6 +109,8 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
 		return
 	}
+
+	// TODO: проверка, что игрок свободен
 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -117,9 +135,22 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 	if newGamerRequest.GameKey == "" || newGamerRequest.UserID == "" || newGamerRequest.Role == "" {
 		g.log.Error("неверный json")
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Invalid JSON: "+string(bodyBytes))
+		return
 	}
 
 	ctx := r.Context()
+
+	alreadyIsInGame, err := g.gameUC.HasUserActiveGamesByUserId(ctx, newGamerRequest.UserID)
+	if err != nil {
+		g.log.Error(err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: "+err.Error())
+		return
+	}
+	if alreadyIsInGame {
+		g.log.Error("пользователь уже состоит в игре!") //TODO добавить отображение id игры
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: уже состоит в игре")
+		return
+	}
 
 	err = g.gameUC.JoinGame(ctx, newGamerRequest)
 	if err != nil {
@@ -148,7 +179,14 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 	playerID := r.URL.Query().Get("player_id")
 
 	if gameID == "" || playerID == "" {
-		log.Println("game_id and player_id required")
+		g.log.Error("отсутствуют поля gameID или playerID")
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "отсутствуют поля gameID или playerID")
+		return
+	}
+
+	if !g.gameUC.IsUserInGameByGameId(ctx, gameID, playerID) {
+		g.log.Error("пользователь не в игре!")
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "пользователь не в игре!")
 		return
 	}
 
@@ -171,22 +209,32 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 
 	if playerID == playerBID {
 		if ag.PlayerBlackWS != nil {
-			conn.WriteMessage(websocket.TextMessage, []byte("У вас уже есть активное подключение."))
-			ag.PlayerBlackWS.Close()
-			return
+			_ = ag.PlayerBlackWS.WriteMessage(websocket.TextMessage, []byte("Вы были отключены, новое соединение создано."))
+			_ = ag.PlayerBlackWS.Close()
 		}
 		ag.PlayerBlackWS = conn
 	} else if playerID == playerWID {
 		if ag.PlayerWhiteWS != nil {
-			conn.WriteMessage(websocket.TextMessage, []byte("У вас уже есть активное подключение."))
-			ag.PlayerWhiteWS.Close()
-			return
+			_ = ag.PlayerWhiteWS.WriteMessage(websocket.TextMessage, []byte("Вы были отключены, новое соединение создано."))
+			_ = ag.PlayerWhiteWS.Close()
 		}
 		ag.PlayerWhiteWS = conn
 	} else {
 		g.log.Error("Unknown player id:", playerID)
 		return
 	}
+
+	defer func() {
+		activeGamesMu.Lock()
+		defer activeGamesMu.Unlock()
+
+		if ag.PlayerBlackWS == conn {
+			ag.PlayerBlackWS = nil
+		}
+		if ag.PlayerWhiteWS == conn {
+			ag.PlayerWhiteWS = nil
+		}
+	}()
 
 	for {
 		var move game.Move
@@ -215,12 +263,21 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if opponentWS != nil {
-			g.log.Info("отправили ход другому игроку")
 			if err := opponentWS.WriteJSON(resp); err != nil {
-				log.Println("Write to opponent error:", err)
+				g.log.Error("Write to opponent error:", err)
+				opponentWS.Close()
+
+				activeGamesMu.Lock()
+				if ag.PlayerBlackWS == opponentWS {
+					ag.PlayerBlackWS = nil
+				}
+				if ag.PlayerWhiteWS == opponentWS {
+					ag.PlayerWhiteWS = nil
+				}
+				activeGamesMu.Unlock()
 			}
 		}
-		// Тут можно добавить сохранение хода в БД, redis
+
 	}
 }
 

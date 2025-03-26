@@ -15,9 +15,10 @@ type GameStore interface {
 	PutGameToMongoDatabase(ctx context.Context, gameData game.Game) bool
 	AddPlayer(ctx context.Context, newUser game.GameUser, gameKey string) bool
 	ConvertToUserFromJoinReq(ctx context.Context, joinRequest game.GameJoinRequest) game.GameUser
-	GeyGameByGameKey(ctx context.Context, gameKey string) game.Game
+	GetGameByGameKey(ctx context.Context, gameKey string) game.Game
 	SaveSGFToRedis(key string, sgfText string) error
 	LoadSGFFromRedis(key string) (string, error)
+	GetActiveGameByUserId(ctx context.Context, userID string) ([]game.Game, error)
 }
 
 type GameUseCase struct {
@@ -62,11 +63,11 @@ func (g *GameUseCase) JoinGame(ctx context.Context, gameJoinData game.GameJoinRe
 }
 
 func (g *GameUseCase) GetGameByID(ctx context.Context, gameUniqueKey string) (game.Game, error) {
-	gameFromDb := g.store.GeyGameByGameKey(ctx, gameUniqueKey)
+	gameFromDb := g.store.GetGameByGameKey(ctx, gameUniqueKey)
 	if gameFromDb.GameKey == "" {
 		return game.Game{}, errors.ErrGameNotFound
 	}
-	return g.store.GeyGameByGameKey(ctx, gameUniqueKey), nil
+	return g.store.GetGameByGameKey(ctx, gameUniqueKey), nil
 }
 
 func (g *GameUseCase) PrepareSgfFile(gameData game.Game) sgf.SGF {
@@ -166,4 +167,23 @@ func AppendMoveToSgf(sgfText string, move game.Move) string {
 		sgfText = sgfText[:len(sgfText)-1]
 	}
 	return sgfText + fmt.Sprintf(";%s[%s])", move.Color, move.Coordinates)
+}
+
+func (g *GameUseCase) IsUserInGameByGameId(ctx context.Context, userID string, gameKey string) bool {
+	play := g.store.GetGameByGameKey(ctx, gameKey)
+	if play.PlayerWhite == userID || play.PlayerBlack == userID {
+		return true
+	}
+	return false
+}
+
+func (g *GameUseCase) HasUserActiveGamesByUserId(ctx context.Context, userID string) (bool, error) {
+	plays, err := g.store.GetActiveGameByUserId(ctx, userID)
+	if err != nil {
+		return true, err
+	}
+	if len(plays) == 0 {
+		return false, nil
+	}
+	return true, nil
 }
