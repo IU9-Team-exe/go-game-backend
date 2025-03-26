@@ -16,15 +16,12 @@ type AdapterRedis struct {
 }
 
 func NewAdapterRedis(cfg *bootstrap.Config) *AdapterRedis {
-	return &AdapterRedis{
-		cfg: cfg,
-	}
+	return &AdapterRedis{cfg: cfg}
 }
 
 func (a *AdapterRedis) Init(ctx context.Context) error {
-	// Используем адрес из конфига
 	addr := a.cfg.RedisUrl
-	password := "" // если используешь пароль — добавь в cfg
+	password := "" // Если есть пароль, укажите его здесь или возьмите из cfg
 
 	a.client = redis.NewClient(&redis.Options{
 		Addr:     addr,
@@ -32,7 +29,6 @@ func (a *AdapterRedis) Init(ctx context.Context) error {
 		DB:       0,
 	})
 
-	// Контекст с таймаутом
 	ctxPing, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 

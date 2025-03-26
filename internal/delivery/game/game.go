@@ -11,6 +11,7 @@ import (
 	"sync"
 	"team_exe/internal/adapters"
 	"team_exe/internal/bootstrap"
+	"team_exe/internal/delivery/auth"
 	"team_exe/internal/domain/game"
 	"team_exe/internal/httpresponse"
 	repo "team_exe/internal/repository"
@@ -23,6 +24,7 @@ type GameHandler struct {
 	gameUC       *gameuc.GameUseCase
 	mongoAdapter *adapters.AdapterMongo
 	redisAdapter *adapters.AdapterRedis
+	authHandler  *auth.AuthHandler
 }
 
 var upgrader = websocket.Upgrader{
@@ -32,11 +34,12 @@ var upgrader = websocket.Upgrader{
 var activeGames = make(map[string]*game.Game)
 var activeGamesMu sync.RWMutex
 
-func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *adapters.AdapterMongo, redisAdapter *adapters.AdapterRedis) *GameHandler {
+func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *adapters.AdapterMongo, redisAdapter *adapters.AdapterRedis, authHandler *auth.AuthHandler) *GameHandler {
 	return &GameHandler{
-		cfg:    cfg,
-		log:    log,
-		gameUC: gameuc.NewGameUseCase(repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database)),
+		cfg:         cfg,
+		log:         log,
+		gameUC:      gameuc.NewGameUseCase(repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database)),
+		authHandler: authHandler,
 	}
 }
 
@@ -75,9 +78,13 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID := g.authHandler.GetUserID(w, r)
+
+	g.log.Infof("New game is from id: %s", userID)
+
 	ctx := r.Context()
 
-	alreadyIsInGame, err := g.gameUC.HasUserActiveGamesByUserId(ctx, gameData.Users[0].ID) // TODO: исправить этот лютый хардкод
+	alreadyIsInGame, err := g.gameUC.HasUserActiveGamesByUserId(ctx, userID)
 	if err != nil {
 		g.log.Error(err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: "+err.Error())
@@ -110,7 +117,9 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: проверка, что игрок свободен
+	userID := g.authHandler.GetUserID(w, r)
+
+	g.log.Infof("New game is from id: %s", userID)
 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -131,6 +140,8 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
 		return
 	}
+
+	newGamerRequest.UserID = userID
 
 	if newGamerRequest.GameKey == "" || newGamerRequest.UserID == "" || newGamerRequest.Role == "" {
 		g.log.Error("неверный json")
@@ -172,11 +183,11 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 		log.Println("upgrade error:", err)
 		return
 	}
-	defer conn.Close()
 
 	ctx := r.Context()
 	gameID := r.URL.Query().Get("game_id")
-	playerID := r.URL.Query().Get("player_id")
+
+	playerID := g.authHandler.GetUserID(w, r)
 
 	if gameID == "" || playerID == "" {
 		g.log.Error("отсутствуют поля gameID или playerID")
@@ -197,7 +208,7 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			activeGamesMu.Unlock()
 			g.log.Error(err)
-			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err)
+			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		ag = &foundGame
@@ -223,6 +234,8 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 		g.log.Error("Unknown player id:", playerID)
 		return
 	}
+
+	defer conn.Close()
 
 	defer func() {
 		activeGamesMu.Lock()

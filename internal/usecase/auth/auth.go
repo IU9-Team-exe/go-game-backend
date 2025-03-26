@@ -24,8 +24,8 @@ type UserStorage interface {
 }
 
 type SessionStorage interface {
-	GetUserIdBySession(sessionID string) (userID int, ok bool)
-	StoreSession(sessionID string, userID int)
+	GetUserIdBySession(sessionID string) (userID string, ok bool)
+	StoreSession(sessionID string, userID string)
 	DeleteSession(sessionID string) (ok bool)
 }
 
@@ -40,24 +40,33 @@ func (a *AuthUsecaseHandler) LoginUser(providedUsername string, providedPassword
 	if !exists {
 		return "", ErrUserNotFound
 	}
+
 	userFromDb, _ := a.userStorage.GetUser(providedUsername)
 	if providedPassword != userFromDb.PasswordHash {
 		return "", ErrWrongPassword
 	}
+
 	sessionID = random.RandString(64)
 	a.sessionStorage.StoreSession(sessionID, userFromDb.ID)
-	return sessionID, err
+	return sessionID, nil
 }
 
-// returns nil or ErrSessionNotFound
-func (a *AuthUsecaseHandler) LogoutUser(sessionID string) (err error) {
+func (a *AuthUsecaseHandler) LogoutUser(sessionID string) error {
 	_, ok := a.sessionStorage.GetUserIdBySession(sessionID)
 	if !ok {
 		return ErrSessionNotFound
 	}
-	ok = a.sessionStorage.DeleteSession(sessionID)
-	if !ok {
+	if !a.sessionStorage.DeleteSession(sessionID) {
 		return ErrSessionNotFound
 	}
 	return nil
+}
+
+// Новый метод для получения userID из сессии
+func (a *AuthUsecaseHandler) GetUserIdFromSession(sessionID string) (string, error) {
+	userID, ok := a.sessionStorage.GetUserIdBySession(sessionID)
+	if !ok {
+		return "", ErrSessionNotFound
+	}
+	return userID, nil
 }

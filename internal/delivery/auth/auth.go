@@ -18,8 +18,12 @@ type AuthHandler struct {
 }
 
 func NewMapAuthHandler(redis *adapters.AdapterRedis) *AuthHandler {
-	return &AuthHandler{usecaseHandler: authUC.NewUserUsecaseHandler(repo.NewMapUserStorage(),
-		repo.NewSessionRedisStorage(redis.GetClient()))}
+	return &AuthHandler{
+		usecaseHandler: authUC.NewUserUsecaseHandler(
+			repo.NewMapUserStorage(),
+			repo.NewSessionRedisStorage(redis.GetClient()),
+		),
+	}
 }
 
 type loginRequest struct {
@@ -37,19 +41,27 @@ func (a *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	err = json.Unmarshal(requestBody, &loginData)
 	if err != nil {
 		slog.Error(err.Error())
-		httpresponse.WriteResponseWithStatus(w, 400, httpresponse.ErrorResponse{ErrorDescription: httpresponse.MALFORMEDJSON_errorDesc})
+		httpresponse.WriteResponseWithStatus(w, 400,
+			httpresponse.ErrorResponse{ErrorDescription: httpresponse.MALFORMEDJSON_errorDesc})
 		return
 	}
 	sessionID, err := a.usecaseHandler.LoginUser(loginData.Username, loginData.Password)
 	if err != nil {
 		if errors.Is(err, authUC.ErrUserNotFound) {
-			httpresponse.WriteResponseWithStatus(w, 400, httpresponse.ErrorResponse{ErrorDescription: "Пользователь не найден"})
+			httpresponse.WriteResponseWithStatus(w, 400,
+				httpresponse.ErrorResponse{ErrorDescription: "Пользователь не найден"})
 			return
 		} else if errors.Is(err, authUC.ErrWrongPassword) {
-			httpresponse.WriteResponseWithStatus(w, 400, httpresponse.ErrorResponse{ErrorDescription: "Неверный пароль"})
+			httpresponse.WriteResponseWithStatus(w, 400,
+				httpresponse.ErrorResponse{ErrorDescription: "Неверный пароль"})
 			return
 		}
+		// иная непредвиденная ошибка
+		httpresponse.WriteResponseWithStatus(w, 500,
+			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
+		return
 	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "sessionID",
 		Value:    sessionID,
@@ -64,14 +76,45 @@ func (a *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	sessionIDCookie, err := r.Cookie("sessionID")
 	if err != nil {
 		if errors.Is(err, http.ErrNoCookie) {
-			httpresponse.WriteResponseWithStatus(w, 400, httpresponse.ErrorResponse{ErrorDescription: http.ErrNoCookie.Error()})
+			httpresponse.WriteResponseWithStatus(w, 400,
+				httpresponse.ErrorResponse{ErrorDescription: http.ErrNoCookie.Error()})
 			return
 		}
 	}
 	err = a.usecaseHandler.LogoutUser(sessionIDCookie.Value)
 	if err != nil {
-		httpresponse.WriteResponseWithStatus(w, 400, httpresponse.ErrorResponse{ErrorDescription: err.Error()})
+		httpresponse.WriteResponseWithStatus(w, 400,
+			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
 		return
 	}
 	httpresponse.WriteResponseWithStatus(w, 200, nil)
+}
+
+// Новый метод для получения userID из сессии
+func (a *AuthHandler) GetUserID(w http.ResponseWriter, r *http.Request) string {
+	sessionIDCookie, err := r.Cookie("sessionID")
+	if err != nil {
+		if errors.Is(err, http.ErrNoCookie) {
+			httpresponse.WriteResponseWithStatus(w, 400,
+				httpresponse.ErrorResponse{ErrorDescription: "Не найдена cookie sessionID"})
+			return ""
+		}
+		httpresponse.WriteResponseWithStatus(w, 400,
+			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
+		return ""
+	}
+
+	userID, err := a.usecaseHandler.GetUserIdFromSession(sessionIDCookie.Value)
+	if err != nil {
+		if errors.Is(err, authUC.ErrSessionNotFound) {
+			httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized,
+				httpresponse.ErrorResponse{ErrorDescription: "Сессия не найдена или истекла"})
+			return ""
+		}
+		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError,
+			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
+		return ""
+	}
+
+	return userID
 }

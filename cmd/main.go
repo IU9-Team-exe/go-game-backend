@@ -112,9 +112,8 @@ func initializeDeliveryHandlers(
 	katagoManager := katagoProto.NewKatagoServiceClient(grpcKatago)
 	katagoDeliveryHandler := katagoDelivery.NewKatagoHandler(cfg, log, katagoManager)
 
-	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter)
-
 	authDeliveryHandler := authDelivery.NewMapAuthHandler(databaseAdapters.redisAdapter)
+	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter, authDeliveryHandler)
 
 	return &mainDeliveryHandler{
 		auth:   authDeliveryHandler,

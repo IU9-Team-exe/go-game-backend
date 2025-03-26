@@ -9,19 +9,18 @@ type UserMapStorage struct {
 func NewMapUserStorage() *UserMapStorage {
 	storage := &UserMapStorage{users: make(map[int]user.User)}
 	storage.users[5] = user.User{
-		ID:           5,
+		ID:           "5",
 		Username:     "artem",
 		PasswordHash: "755",
 		PasswordSalt: "",
 	}
 
 	storage.users[4] = user.User{
-		ID:           4,
+		ID:           "4",
 		Username:     "FunnyRockfish",
 		PasswordHash: "770",
 		PasswordSalt: "",
 	}
-
 	return storage
 }
 
@@ -44,8 +43,8 @@ func (u UserMapStorage) GetUser(username string) (user.User, bool) {
 }
 
 type SessionMapStorage struct {
-	sessions map[string]int
-	users    map[int]string
+	sessions map[string]string
+	users    map[string]string
 }
 
 func (u SessionMapStorage) DeleteSession(sessionID string) (ok bool) {
@@ -59,20 +58,20 @@ func (u SessionMapStorage) DeleteSession(sessionID string) (ok bool) {
 
 func NewSessionMapStorage() *SessionMapStorage {
 	return &SessionMapStorage{
-		sessions: make(map[string]int),
-		users:    make(map[int]string),
+		sessions: make(map[string]string),
+		users:    make(map[string]string),
 	}
 }
 
-func (u SessionMapStorage) GetUserIdBySession(sessionID string) (int, bool) {
+func (u SessionMapStorage) GetUserIdBySession(sessionID string) (string, bool) {
 	if v, ok := u.sessions[sessionID]; ok {
 		return v, true
 	} else {
-		return -1, false
+		return "", false
 	}
 }
 
-func (u SessionMapStorage) StoreSession(sessionID string, userID int) {
+func (u SessionMapStorage) StoreSession(sessionID string, userID string) {
 	u.sessions[sessionID] = userID
 	u.users[userID] = sessionID
 	return
