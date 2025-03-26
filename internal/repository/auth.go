@@ -42,7 +42,7 @@ func (u UserMapStorage) GetUser(username string) (user.User, bool) {
 	return user.User{}, false
 }
 
-func (u UserMapStorage) GetUserByID(id int) (user.User, bool) {
+func (u UserMapStorage) GetUserByID(id string) (user.User, bool) {
 	for _, v := range u.users {
 		if v.ID == id {
 			return v, true

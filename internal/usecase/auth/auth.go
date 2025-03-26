@@ -21,7 +21,7 @@ func NewUserUsecaseHandler(u UserStorage, s SessionStorage) *AuthUsecaseHandler 
 type UserStorage interface {
 	CheckExists(username string) bool
 	GetUser(username string) (userDomain.User, bool)
-	GetUserByID(id int) (userDomain.User, bool)
+	GetUserByID(id string) (userDomain.User, bool)
 }
 
 type SessionStorage interface {

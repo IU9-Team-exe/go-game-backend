@@ -178,15 +178,8 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("upgrade error:", err)
-		return
-	}
-
 	ctx := r.Context()
 	gameID := r.URL.Query().Get("game_id")
-
 	playerID := g.authHandler.GetUserID(w, r)
 
 	if gameID == "" || playerID == "" {
@@ -198,6 +191,12 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 	if !g.gameUC.IsUserInGameByGameId(ctx, gameID, playerID) {
 		g.log.Error("пользователь не в игре!")
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "пользователь не в игре!")
+		return
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("upgrade error:", err)
 		return
 	}
 
@@ -216,37 +215,33 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 	}
 	activeGamesMu.Unlock()
 
-	playerBID, playerWID := ag.PlayerBlack, ag.PlayerWhite
+	var playerWS **websocket.Conn
+	var opponentWS **websocket.Conn
 
-	if playerID == playerBID {
-		if ag.PlayerBlackWS != nil {
-			_ = ag.PlayerBlackWS.WriteMessage(websocket.TextMessage, []byte("Вы были отключены, новое соединение создано."))
-			_ = ag.PlayerBlackWS.Close()
-		}
-		ag.PlayerBlackWS = conn
-	} else if playerID == playerWID {
-		if ag.PlayerWhiteWS != nil {
-			_ = ag.PlayerWhiteWS.WriteMessage(websocket.TextMessage, []byte("Вы были отключены, новое соединение создано."))
-			_ = ag.PlayerWhiteWS.Close()
-		}
-		ag.PlayerWhiteWS = conn
-	} else {
+	switch playerID {
+	case ag.PlayerBlack:
+		playerWS, opponentWS = &ag.PlayerBlackWS, &ag.PlayerWhiteWS
+	case ag.PlayerWhite:
+		playerWS, opponentWS = &ag.PlayerWhiteWS, &ag.PlayerBlackWS
+	default:
 		g.log.Error("Unknown player id:", playerID)
+		conn.Close()
 		return
 	}
 
-	defer conn.Close()
+	if *playerWS != nil {
+		(*playerWS).WriteMessage(websocket.TextMessage, []byte("Вы были отключены, новое соединение создано."))
+		(*playerWS).Close()
+	}
+	*playerWS = conn
 
 	defer func() {
+		conn.Close()
 		activeGamesMu.Lock()
-		defer activeGamesMu.Unlock()
-
-		if ag.PlayerBlackWS == conn {
-			ag.PlayerBlackWS = nil
+		if *playerWS == conn {
+			*playerWS = nil
 		}
-		if ag.PlayerWhiteWS == conn {
-			ag.PlayerWhiteWS = nil
-		}
+		activeGamesMu.Unlock()
 	}()
 
 	for {
@@ -255,19 +250,14 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 			g.log.Error("read error:", err)
 			return
 		}
-		g.log.Info("Получен ход: ", move)
 
-		var opponentWS *websocket.Conn
-		if playerID == playerBID {
-			opponentWS = ag.PlayerWhiteWS
-		} else {
-			opponentWS = ag.PlayerBlackWS
-		}
+		g.log.Info("Получен ход: ", move)
 
 		sgfString, err := g.gameUC.AddMoveToGameSgf(gameID, move)
 		if err != nil {
 			g.log.Error(err)
 			conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
+			continue
 		}
 
 		resp := game.GameStateResponse{
@@ -275,22 +265,17 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 			SGF:  sgfString,
 		}
 
-		if opponentWS != nil {
-			if err := opponentWS.WriteJSON(resp); err != nil {
+		if *opponentWS != nil {
+			if err := (*opponentWS).WriteJSON(resp); err != nil {
 				g.log.Error("Write to opponent error:", err)
-				opponentWS.Close()
-
+				(*opponentWS).Close()
 				activeGamesMu.Lock()
-				if ag.PlayerBlackWS == opponentWS {
-					ag.PlayerBlackWS = nil
-				}
-				if ag.PlayerWhiteWS == opponentWS {
-					ag.PlayerWhiteWS = nil
-				}
+				*opponentWS = nil
 				activeGamesMu.Unlock()
 			}
+		} else {
+			conn.WriteMessage(websocket.TextMessage, []byte("Оппонент не подключен"))
 		}
-
 	}
 }
 
