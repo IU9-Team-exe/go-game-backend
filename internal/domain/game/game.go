@@ -45,3 +45,7 @@ type GameStateResponse struct {
 	Move Move   `json:"move"`
 	SGF  string `json:"sgf"`
 }
+
+type GetGameInfoRequest struct {
+	GameKey string `json:"game_key" bson:"game_key"`
+}

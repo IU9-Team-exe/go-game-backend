@@ -43,6 +43,34 @@ func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *
 	}
 }
 
+func (g *GameHandler) GetGameById(w http.ResponseWriter, r *http.Request) {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		g.log.Error("Failed to read body:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Failed to read request body")
+		return
+	}
+	defer r.Body.Close()
+
+	decoder := json.NewDecoder(bytes.NewReader(bodyBytes))
+	decoder.DisallowUnknownFields()
+
+	var gameData game.GetGameInfoRequest
+
+	if err = decoder.Decode(&gameData); err != nil {
+		g.log.Error("JSON decode error:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+		return
+	}
+	gameByID, err := g.gameUC.GetGameByID(r.Context(), gameData.GameKey)
+	if err != nil {
+		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError,
+			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
+		return
+	}
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, gameByID)
+}
+
 func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		g.log.Error("Only POST method is allowed")
