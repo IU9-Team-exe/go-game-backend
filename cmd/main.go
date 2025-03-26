@@ -17,6 +17,7 @@ import (
 	authDelivery "team_exe/internal/delivery/auth"
 	gameDelivery "team_exe/internal/delivery/game"
 	katagoDelivery "team_exe/internal/delivery/katago"
+	ownMiddleware "team_exe/internal/middleware"
 	katagoProto "team_exe/microservices/proto"
 )
 
@@ -56,7 +57,7 @@ func main() {
 
 	r := chi.NewRouter()
 	handlers := initializeDeliveryHandlers(ctx, *cfg, logger, grpcKatago, databaseAdapters)
-	handlers.Router(r)
+	handlers.Router(r, cfg.IsLocalCors)
 
 	port := ":8080"
 	logger.Infof("Server is running on port %s", port)
@@ -73,7 +74,10 @@ func NewLogger() *zap.SugaredLogger {
 	return logger.Sugar()
 }
 
-func (h *mainDeliveryHandler) Router(r *chi.Mux) {
+func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
+	if isLocalCors {
+		r.Use(ownMiddleware.CORS)
+	}
 	r.Use(middleware.Logger)
 
 	r.Post("/login", h.auth.Login)
