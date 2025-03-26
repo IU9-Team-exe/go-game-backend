@@ -42,6 +42,15 @@ func (u UserMapStorage) GetUser(username string) (user.User, bool) {
 	return user.User{}, false
 }
 
+func (u UserMapStorage) GetUserByID(id int) (user.User, bool) {
+	for _, v := range u.users {
+		if v.ID == id {
+			return v, true
+		}
+	}
+	return user.User{}, false
+}
+
 type SessionMapStorage struct {
 	sessions map[string]string
 	users    map[string]string

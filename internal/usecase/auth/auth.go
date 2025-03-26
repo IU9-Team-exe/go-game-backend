@@ -21,6 +21,7 @@ func NewUserUsecaseHandler(u UserStorage, s SessionStorage) *AuthUsecaseHandler 
 type UserStorage interface {
 	CheckExists(username string) bool
 	GetUser(username string) (userDomain.User, bool)
+	GetUserByID(id int) (userDomain.User, bool)
 }
 
 type SessionStorage interface {
@@ -34,6 +35,18 @@ var (
 	ErrWrongPassword   = errors.New("wrong password")
 	ErrSessionNotFound = errors.New("session was not found")
 )
+
+func (a *AuthUsecaseHandler) CheckAuthorized(sessionID string) (ok bool, user userDomain.User) {
+	userID, found := a.sessionStorage.GetUserIdBySession(sessionID)
+	if !found {
+		return false, userDomain.User{}
+	}
+	user, ok = a.userStorage.GetUserByID(userID)
+	if !ok {
+		return false, userDomain.User{}
+	}
+	return ok, user
+}
 
 func (a *AuthUsecaseHandler) LoginUser(providedUsername string, providedPassword string) (sessionID string, err error) {
 	exists := a.userStorage.CheckExists(providedUsername)
