@@ -15,7 +15,7 @@ type ErrorResponse struct {
 	ErrorDescription string `json:"ErrorDescription"`
 }
 
-const INTERNALERRORJSON = "{\"status\": 500,\"body\":{\"error\": \"Internal server error\"}}"
+const INTERNALERRORJSON = "{\"statuses\": 500,\"body\":{\"error\": \"Internal server error\"}}"
 
 const MALFORMEDJSON_errorDesc = "json unmarshalling error"
 
@@ -32,7 +32,7 @@ func WriteResponseWithStatus(w http.ResponseWriter, status int, body any) {
 		WriteInternalErrorResponse(w)
 		return
 	}
-	//logger.Info("response", "status", status, "body", body)
+	//logger.Info("response", "statuses", statuses, "body", body)
 }
 
 func marshalStatusJson(status int, body any) ([]byte, error) {

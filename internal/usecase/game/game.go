@@ -8,17 +8,19 @@ import (
 	"team_exe/internal/domain/game"
 	sgf "team_exe/internal/domain/sgf"
 	"team_exe/internal/errors"
+	"team_exe/internal/statuses"
+	"time"
 )
 
 type GameStore interface {
-	GenerateGameKey(ctx context.Context) string
+	GenerateGameKeys(ctx context.Context) (gameKeySecret string, gameKeyPublic string)
 	PutGameToMongoDatabase(ctx context.Context, gameData game.Game) bool
 	AddPlayer(ctx context.Context, newUser game.GameUser, gameKey string) bool
 	ConvertToUserFromJoinReq(ctx context.Context, joinRequest game.GameJoinRequest) game.GameUser
 	GetGameByGameKey(ctx context.Context, gameKey string) game.Game
 	SaveSGFToRedis(key string, sgfText string) error
 	LoadSGFFromRedis(key string) (string, error)
-	GetActiveGameByUserId(ctx context.Context, userID string) ([]game.Game, error)
+	HasUserActiveGameByUserId(ctx context.Context, userID string) (bool, error)
 }
 
 type GameUseCase struct {
@@ -29,15 +31,31 @@ func NewGameUseCase(store GameStore) *GameUseCase {
 	return &GameUseCase{store: store}
 }
 
-func (g *GameUseCase) CreateGame(ctx context.Context, gameData game.Game) (err error, gameUniqueKey string) {
-	gameUniqueKey = g.store.GenerateGameKey(ctx)
-	gameData.GameKey = gameUniqueKey
+func (g *GameUseCase) CreateGame(ctx context.Context, newGameRequest game.CreateGameRequest, creatorID string) (err error, gameKeyPublic string, gameKeySecret string) {
+	gameKeySecret, gameKeyPublic = g.store.GenerateGameKeys(ctx)
 
-	ok := g.store.PutGameToMongoDatabase(ctx, gameData)
-	if !ok {
-		return errors.ErrCreateGameFailed, ""
+	newGame := game.Game{
+		BoardSize:     newGameRequest.BoardSize,
+		Komi:          newGameRequest.Komi,
+		GameKeySecret: gameKeySecret,
+		GameKeyPublic: gameKeyPublic,
+		Status:        statuses.StatusWaitOpponent,
+		CreatedAt:     time.Now(),
 	}
-	return nil, gameUniqueKey
+
+	if newGameRequest.IsCreatorBlack {
+		newGame.PlayerBlack = creatorID
+	} else {
+		newGame.PlayerWhite = creatorID
+	}
+
+	// getUserById - TODO и добавить в срез Users
+
+	ok := g.store.PutGameToMongoDatabase(ctx, newGame)
+	if !ok {
+		return errors.ErrCreateGameFailed, "", ""
+	}
+	return nil, gameKeyPublic, gameKeySecret
 }
 
 func (g *GameUseCase) JoinGame(ctx context.Context, gameJoinData game.GameJoinRequest) (err error) {
@@ -54,7 +72,7 @@ func (g *GameUseCase) JoinGame(ctx context.Context, gameJoinData game.GameJoinRe
 
 	minSGF := g.PrepareSgfFile(foundGame)
 	sgfString := SerializeSGF(&minSGF)
-	err = g.store.SaveSGFToRedis(foundGame.GameKey, sgfString)
+	err = g.store.SaveSGFToRedis(foundGame.GameKeySecret, sgfString)
 	if err != nil {
 		return err
 	}
@@ -64,7 +82,7 @@ func (g *GameUseCase) JoinGame(ctx context.Context, gameJoinData game.GameJoinRe
 
 func (g *GameUseCase) GetGameByID(ctx context.Context, gameUniqueKey string) (game.Game, error) {
 	gameFromDb := g.store.GetGameByGameKey(ctx, gameUniqueKey)
-	if gameFromDb.GameKey == "" {
+	if gameFromDb.GameKeySecret == "" {
 		return game.Game{}, errors.ErrGameNotFound
 	}
 	return g.store.GetGameByGameKey(ctx, gameUniqueKey), nil
@@ -178,12 +196,9 @@ func (g *GameUseCase) IsUserInGameByGameId(ctx context.Context, userID string, g
 }
 
 func (g *GameUseCase) HasUserActiveGamesByUserId(ctx context.Context, userID string) (bool, error) {
-	plays, err := g.store.GetActiveGameByUserId(ctx, userID)
+	isAlreadyInGame, err := g.store.HasUserActiveGameByUserId(ctx, userID)
 	if err != nil {
 		return true, err
 	}
-	if len(plays) == 0 {
-		return false, nil
-	}
-	return true, nil
+	return isAlreadyInGame, nil
 }

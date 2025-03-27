@@ -26,9 +26,58 @@ func NewMapAuthHandler(redis *adapters.AdapterRedis) *AuthHandler {
 	}
 }
 
+type registerRequest struct {
+	Username string `json:"Username"`
+	Email    string `json:"Email"`
+	Password string `json:"Password"`
+}
+
 type loginRequest struct {
 	Username string `json:"Username"`
 	Password string `json:"Password"`
+}
+
+func (a *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	requestBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		slog.Error(err.Error())
+		return
+	}
+
+	loginData := registerRequest{}
+	err = json.Unmarshal(requestBody, &loginData)
+	if err != nil {
+		slog.Error(err.Error())
+		httpresponse.WriteResponseWithStatus(w, 400,
+			httpresponse.ErrorResponse{ErrorDescription: httpresponse.MALFORMEDJSON_errorDesc})
+		return
+	}
+
+	sessionID, err := a.usecaseHandler.LoginUser(loginData.Username, loginData.Password)
+	if err != nil {
+		if errors.Is(err, authUC.ErrUserNotFound) {
+			httpresponse.WriteResponseWithStatus(w, 400,
+				httpresponse.ErrorResponse{ErrorDescription: "Пользователь не найден"})
+			return
+		} else if errors.Is(err, authUC.ErrWrongPassword) {
+			httpresponse.WriteResponseWithStatus(w, 400,
+				httpresponse.ErrorResponse{ErrorDescription: "Неверный пароль"})
+			return
+		}
+		// иная непредвиденная ошибка
+		httpresponse.WriteResponseWithStatus(w, 500,
+			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "sessionID",
+		Value:    sessionID,
+		Expires:  time.Now().Add(time.Hour * 10),
+		Secure:   true,
+		HttpOnly: true,
+	})
+	httpresponse.WriteResponseWithStatus(w, 200, nil)
 }
 
 func (a *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {

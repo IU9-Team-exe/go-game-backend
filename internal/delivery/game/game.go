@@ -3,6 +3,7 @@ package game
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"io"
@@ -56,7 +57,6 @@ func (g *GameHandler) GetGameById(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	var gameData game.GetGameInfoRequest
-
 	if err = decoder.Decode(&gameData); err != nil {
 		g.log.Error("JSON decode error:", err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
@@ -78,8 +78,6 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// проверка, что игрок свободен! TODO
-
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		g.log.Error("Failed to read body:", err)
@@ -90,51 +88,61 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 
 	g.log.Infof("Incoming JSON: %s", string(bodyBytes))
 
-	var gameData game.Game
+	var newGameRequest game.CreateGameRequest
 	decoder := json.NewDecoder(bytes.NewReader(bodyBytes))
 	decoder.DisallowUnknownFields()
-
-	if err = decoder.Decode(&gameData); err != nil {
+	if err = decoder.Decode(&newGameRequest); err != nil {
 		g.log.Error("JSON decode error:", err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
 		return
 	}
 
-	if len(gameData.Users) != 1 {
-		g.log.Error("неверный json")
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Invalid JSON: "+string(bodyBytes))
+	if newGameRequest.BoardSize == 0 || newGameRequest.Komi == 0 {
+		g.log.Error("запрос на создание игры не содержит размер поля или коми!")
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "запрос на создание игры не содержит размер поля или коми! "+string(bodyBytes))
 		return
 	}
 
 	userID := g.authHandler.GetUserID(w, r)
-
+	if userID == "" {
+		g.log.Error("Не нашли userID в куке")
+		return
+	}
 	g.log.Infof("New game is from id: %s", userID)
 
 	ctx := r.Context()
-
-	alreadyIsInGame, err := g.gameUC.HasUserActiveGamesByUserId(ctx, userID)
+	isAlreadyInGame, err := g.gameUC.HasUserActiveGamesByUserId(ctx, userID)
 	if err != nil {
 		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: "+err.Error())
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при проверке на вхождение в уже существующую в игру: "+err.Error())
 		return
 	}
-	if alreadyIsInGame {
-		g.log.Error("пользователь уже состоит в игре!") //TODO добавить отображение id игры
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: уже состоит в игре")
+	if isAlreadyInGame {
+		g.log.Error("пользователь уже состоит в игре!")
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: игрок уже состоит в игре")
 		return
 	}
 
-	err, gameKey := g.gameUC.CreateGame(ctx, gameData)
+	err, gameKeyPublic, gameKeySecret := g.gameUC.CreateGame(ctx, newGameRequest, userID)
 	if err != nil {
 		g.log.Error(err)
 		return
+	}
+
+	// После создания получаем экземпляр игры и сохраняем его в кэш
+	newGame, err := g.gameUC.GetGameByID(ctx, gameKeySecret)
+	if err != nil {
+		g.log.Error("Не удалось получить игру после создания:", err)
+	} else {
+		activeGamesMu.Lock()
+		activeGames[gameKeySecret] = &newGame
+		activeGamesMu.Unlock()
 	}
 
 	resp := game.GameCreateResponse{
-		UniqueKey: gameKey,
+		UniqueKey: gameKeyPublic,
 	}
-
-	g.log.Info("New Game Created with key: " + gameKey)
+	g.log.Info("New Game Created with keys: "+gameKeyPublic, gameKeySecret)
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
 }
 
@@ -146,8 +154,11 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := g.authHandler.GetUserID(w, r)
-
-	g.log.Infof("New game is from id: %s", userID)
+	if userID == "" {
+		g.log.Error("Не нашли userID в куке")
+		return
+	}
+	g.log.Infof("Join game request from id: %s", userID)
 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -157,37 +168,31 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	g.log.Infof("Incoming JSON: %s", string(bodyBytes))
-
 	var newGamerRequest game.GameJoinRequest
 	decoder := json.NewDecoder(bytes.NewReader(bodyBytes))
 	decoder.DisallowUnknownFields()
-
 	if err = decoder.Decode(&newGamerRequest); err != nil {
 		g.log.Error("JSON decode error:", err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
 		return
 	}
 
-	newGamerRequest.UserID = userID
-
-	if newGamerRequest.GameKey == "" || newGamerRequest.UserID == "" || newGamerRequest.Role == "" {
+	if newGamerRequest.GameKey == "" || newGamerRequest.Role == "" {
 		g.log.Error("неверный json")
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Invalid JSON: "+string(bodyBytes))
 		return
 	}
 
 	ctx := r.Context()
-
-	alreadyIsInGame, err := g.gameUC.HasUserActiveGamesByUserId(ctx, newGamerRequest.UserID)
+	isAlreadyInGame, err := g.gameUC.HasUserActiveGamesByUserId(ctx, userID)
 	if err != nil {
 		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: "+err.Error())
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при проверке на вхождение в уже существующую в игру: "+err.Error())
 		return
 	}
-	if alreadyIsInGame {
-		g.log.Error("пользователь уже состоит в игре!") //TODO добавить отображение id игры
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: уже состоит в игре")
+	if isAlreadyInGame {
+		g.log.Error("пользователь уже состоит в игре!")
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: игрок уже состоит в игре")
 		return
 	}
 
@@ -197,10 +202,27 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Обновляем кэш activeGames – если игра уже активна в памяти, обновляем информацию об игроках.
+	activeGamesMu.Lock()
+	if existingGame, ok := activeGames[newGamerRequest.GameKey]; ok {
+		if newGamerRequest.Role == "black" {
+			existingGame.PlayerBlack = newGamerRequest.UserID
+		} else if newGamerRequest.Role == "white" {
+			existingGame.PlayerWhite = newGamerRequest.UserID
+		}
+	} else {
+		// Если игры ещё нет в кэше, достаём из базы и добавляем
+		retrievedGame, err := g.gameUC.GetGameByID(ctx, newGamerRequest.GameKey)
+		if err == nil {
+			activeGames[newGamerRequest.GameKey] = &retrievedGame
+		}
+	}
+	activeGamesMu.Unlock()
+
 	resp := JsonOKResponse{
 		Text: "юзер успешно добавлен",
 	}
-
+	g.log.Info(g.gameUC.GetGameByID(ctx, newGamerRequest.GameKey))
 	g.log.Info(resp.Text)
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
 }
@@ -209,18 +231,12 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	gameID := r.URL.Query().Get("game_id")
 	playerID := g.authHandler.GetUserID(w, r)
-
 	if gameID == "" || playerID == "" {
 		g.log.Error("отсутствуют поля gameID или playerID")
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "отсутствуют поля gameID или playerID")
 		return
 	}
-
-	if !g.gameUC.IsUserInGameByGameId(ctx, gameID, playerID) {
-		g.log.Error("пользователь не в игре!")
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "пользователь не в игре!")
-		return
-	}
+	g.log.Infof("Player id: %s", playerID)
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -228,24 +244,25 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Сначала ищем игру в кэше, если её нет — достаём из базы и сохраняем в activeGames
 	activeGamesMu.Lock()
 	ag, ok := activeGames[gameID]
 	if !ok {
-		foundGame, err := g.gameUC.GetGameByID(ctx, gameID)
+		activeGamesMu.Unlock()
+		retrievedGame, err := g.gameUC.GetGameByID(ctx, gameID)
 		if err != nil {
-			activeGamesMu.Unlock()
 			g.log.Error(err)
 			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		ag = &foundGame
-		activeGames[gameID] = ag
+		activeGamesMu.Lock()
+		activeGames[gameID] = &retrievedGame
+		ag = &retrievedGame
 	}
 	activeGamesMu.Unlock()
 
 	var playerWS **websocket.Conn
 	var opponentWS **websocket.Conn
-
 	switch playerID {
 	case ag.PlayerBlack:
 		playerWS, opponentWS = &ag.PlayerBlackWS, &ag.PlayerWhiteWS
@@ -253,6 +270,7 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 		playerWS, opponentWS = &ag.PlayerWhiteWS, &ag.PlayerBlackWS
 	default:
 		g.log.Error("Unknown player id:", playerID)
+		fmt.Println(ag)
 		conn.Close()
 		return
 	}
@@ -278,21 +296,17 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 			g.log.Error("read error:", err)
 			return
 		}
-
 		g.log.Info("Получен ход: ", move)
-
 		sgfString, err := g.gameUC.AddMoveToGameSgf(gameID, move)
 		if err != nil {
 			g.log.Error(err)
 			conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
 			continue
 		}
-
 		resp := game.GameStateResponse{
 			Move: move,
 			SGF:  sgfString,
 		}
-
 		if *opponentWS != nil {
 			if err := (*opponentWS).WriteJSON(resp); err != nil {
 				g.log.Error("Write to opponent error:", err)

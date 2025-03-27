@@ -10,6 +10,7 @@ bin
 *.so
 *.dylib
 .tar
+.yml
 # Test binary, built with `go test -c`
 *.test
 

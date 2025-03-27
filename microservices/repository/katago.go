@@ -67,7 +67,7 @@ func (k *KatagoRepository) GenerateMove(ctx context.Context, moves []string) (ga
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return game.BotResponse{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return game.BotResponse{}, fmt.Errorf("unexpected statuses code: %d", resp.StatusCode)
 	}
 
 	var result game.BotResponse

@@ -2,7 +2,10 @@ package repo
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/bson"
@@ -12,6 +15,7 @@ import (
 	"net/http"
 	"team_exe/internal/bootstrap"
 	"team_exe/internal/domain/game"
+	"team_exe/internal/statuses"
 	"time"
 )
 
@@ -33,8 +37,38 @@ func NewGameRepository(cfg bootstrap.Config, log *zap.SugaredLogger, redis *redi
 	}
 }
 
-func (g *GameRepository) GenerateGameKey(ctx context.Context) string {
-	return uuid.New().String()
+func (g *GameRepository) GenerateGameKeys(ctx context.Context) (gameKeySecret string, gameKeyPublic string) {
+	gameKeySecret = uuid.New().String()
+	for {
+		gameKeyPublic = generateHash(gameKeySecret)
+
+		if g.CheckPublicKeyIsUniq(ctx, gameKeyPublic) {
+			return gameKeySecret, gameKeyPublic
+		}
+	}
+}
+
+func generateHash(s string) string {
+	h := md5.New()
+	h.Write([]byte(s))
+	hashBytes := h.Sum(nil)
+	number := binary.BigEndian.Uint32(hashBytes[:4])
+	code := number % 100000
+	return fmt.Sprintf("%05d", code)
+}
+
+func (g *GameRepository) CheckPublicKeyIsUniq(ctx context.Context, gameKeyPublic string) bool {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	collection := g.mongo.Collection("games")
+	filter := bson.M{
+		"game_key_public": gameKeyPublic,
+	}
+	err := collection.FindOne(ctx, filter).Err()
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return true
+	}
+	return false
 }
 
 func (g *GameRepository) PutGameToMongoDatabase(ctx context.Context, gameData game.Game) bool {
@@ -49,7 +83,7 @@ func (g *GameRepository) PutGameToMongoDatabase(ctx context.Context, gameData ga
 		return false
 	}
 
-	g.log.Infof("game inserted successfully with key: %s", gameData.GameKey)
+	g.log.Infof("game inserted successfully with key: %s", gameData.GameKeySecret)
 
 	return true
 }
@@ -100,7 +134,10 @@ func (g *GameRepository) AddPlayer(ctx context.Context, newUser game.GameUser, g
 	return true
 }
 
-func (g *GameRepository) ConvertToUserFromJoinReq(ctx context.Context, joinRequest game.GameJoinRequest) game.GameUser {
+func (g *GameRepository) GetUserByID(ctx context.Context, userID string) game.GameUser {
+
+	// логика получения юзера
+
 	user := game.GameUser{}
 	user.ID = joinRequest.UserID
 	user.Role = joinRequest.Role
@@ -174,7 +211,7 @@ func (g *GameRepository) GetAllActiveGames() ([]game.Game, error) {
 	defer cancel()
 	collection := g.mongo.Collection("games")
 	filter := bson.M{
-		"status": "active",
+		"statuses": "active",
 	}
 	var result []game.Game
 	cursor, err := collection.Find(ctx, filter)
@@ -197,31 +234,32 @@ func (g *GameRepository) GetAllActiveGames() ([]game.Game, error) {
 	return result, nil
 }
 
-func (g *GameRepository) GetActiveGameByUserId(ctx context.Context, userID string) ([]game.Game, error) {
+func (g *GameRepository) HasUserActiveGameByUserId(ctx context.Context, userID string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	collection := g.mongo.Collection("games")
 	filter := bson.M{
-		"$or": []bson.M{
-			{"player_black": userID},
-			{"player_white": userID},
+		"$and": []bson.M{
+			{
+				"$or": []bson.M{
+					{"player_black": userID},
+					{"player_white": userID},
+				},
+			},
+			{
+				"status": bson.M{
+					"$ne": statuses.StatusCompleted,
+				},
+			},
 		},
 	}
-	var result []game.Game
-	cursor, err := collection.Find(ctx, filter)
-	if err != nil {
+	err := collection.FindOne(ctx, filter).Err()
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return false, nil
+	} else if err != nil {
 		g.log.Error(err)
-		return result, err
+		return false, err
 	}
-	defer cursor.Close(ctx)
-	for cursor.Next(ctx) {
-		var play game.Game
-		err = cursor.Decode(&play)
-		if err != nil {
-			g.log.Error(err)
-			return result, err
-		}
-		result = append(result, play)
-	}
-	return result, nil
+
+	return true, nil
 }
