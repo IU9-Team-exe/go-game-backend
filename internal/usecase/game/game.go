@@ -89,11 +89,16 @@ func (g *GameUseCase) GetGameByPublicKey(ctx context.Context, gameKeyPublic stri
 }
 
 func (g *GameUseCase) GetGameByID(ctx context.Context, gameUniqueKey string) (game.Game, error) {
-	gameFromDb := g.store.GetGameByGameKey(ctx, gameUniqueKey)
+	gameFromDb, err := g.store.GetGameByPublicKey(ctx, gameUniqueKey)
+	if err != nil {
+		return game.Game{}, err
+	}
+
 	if gameFromDb.GameKeySecret == "" {
 		return game.Game{}, errors.ErrGameNotFound
 	}
-	return g.store.GetGameByGameKey(ctx, gameUniqueKey), nil
+
+	return gameFromDb, nil
 }
 
 func (g *GameUseCase) PrepareSgfFile(gameData game.Game) sgf.SGF {

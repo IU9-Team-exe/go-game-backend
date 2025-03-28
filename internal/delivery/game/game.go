@@ -136,6 +136,10 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
 }
 
+func (g *GameHandler) LeaveGame(w http.ResponseWriter, r *http.Request) {
+
+}
+
 func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		g.log.Error("Only POST method is allowed")
