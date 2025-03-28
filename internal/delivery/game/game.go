@@ -45,7 +45,7 @@ func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *
 	}
 }
 
-func (g *GameHandler) GetGameById(w http.ResponseWriter, r *http.Request) {
+func (g *GameHandler) GetGameByPublicKey(w http.ResponseWriter, r *http.Request) {
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		g.log.Error("Failed to read body:", err)
@@ -63,7 +63,7 @@ func (g *GameHandler) GetGameById(w http.ResponseWriter, r *http.Request) {
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
 		return
 	}
-	gameByID, err := g.gameUC.GetGameByID(r.Context(), gameData.GameKey)
+	gameByID, err := g.gameUC.GetGameByPublicKey(r.Context(), gameData.GamePublicKey)
 	if err != nil {
 		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError,
 			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
@@ -120,7 +120,7 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// После создания получаем экземпляр игры и сохраняем его в кэш
-	newGame, err := g.gameUC.GetGameByID(ctx, gameKeySecret)
+	newGame, err := g.gameUC.GetGameBySecreteKey(ctx, gameKeySecret)
 	if err != nil {
 		g.log.Error("Не удалось получить игру после создания:", err)
 	} else {

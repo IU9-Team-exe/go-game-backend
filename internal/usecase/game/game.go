@@ -85,14 +85,18 @@ func (g *GameUseCase) GetGameByPublicKey(ctx context.Context, gameKeyPublic stri
 		return game.Game{}, fmt.Errorf("игры с ключом %s не найдено", gameKeyPublic)
 	}
 
+	sgfStringOfGame, err := g.GetSgfStringByGameKey(play.GameKeySecret)
+	if err != nil {
+		// а вот ничего не будет ахахах
+	}
+
+	play.Sgf = sgfStringOfGame
+
 	return play, nil
 }
 
-func (g *GameUseCase) GetGameByID(ctx context.Context, gameUniqueKey string) (game.Game, error) {
-	gameFromDb, err := g.store.GetGameByPublicKey(ctx, gameUniqueKey)
-	if err != nil {
-		return game.Game{}, err
-	}
+func (g *GameUseCase) GetGameBySecreteKey(ctx context.Context, gameUniqueKey string) (game.Game, error) {
+	gameFromDb := g.store.GetGameByGameKey(ctx, gameUniqueKey)
 
 	if gameFromDb.GameKeySecret == "" {
 		return game.Game{}, errors.ErrGameNotFound

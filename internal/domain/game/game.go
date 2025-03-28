@@ -21,6 +21,7 @@ type Game struct {
 	PlayerBlackWS *websocket.Conn `json:"-"`
 	PlayerWhiteWS *websocket.Conn `json:"-"`
 	Komi          float64         `json:"komi" bson:"komi"`
+	Sgf           string          `json:"sgf" bson:"sgf"`
 }
 
 type GameUser struct {
@@ -47,7 +48,7 @@ type GameStateResponse struct {
 }
 
 type GetGameInfoRequest struct {
-	GameKey string `json:"game_key" bson:"game_key"`
+	GamePublicKey string `json:"game_key" bson:"game_key"`
 }
 
 type CreateGameRequest struct {
