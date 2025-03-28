@@ -186,8 +186,8 @@ func (g *GameRepository) CalculateUserColor(ctx context.Context, gameKey string,
 
 	filter := bson.M{"game_key": gameKey}
 
-	var result game.Game
-	err := collection.FindOne(ctx, filter).Decode(&result)
+	var foundGame game.Game
+	err := collection.FindOne(ctx, filter).Decode(&foundGame)
 
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
@@ -196,14 +196,7 @@ func (g *GameRepository) CalculateUserColor(ctx context.Context, gameKey string,
 		return ""
 	}
 
-	colorOfOpponent := ""
-	for _, user := range result.Users {
-		if user.ID != userID {
-			colorOfOpponent = user.Color
-		}
-	}
-
-	if colorOfOpponent == "black" {
+	if foundGame.PlayerBlack != "" {
 		return "white"
 	}
 	return "black"

@@ -106,6 +106,7 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при проверке на вхождение в уже существующую в игру: "+err.Error())
 		return
 	}
+
 	if isAlreadyInGame {
 		g.log.Error("пользователь уже состоит в игре!")
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: игрок уже состоит в игре")
@@ -188,7 +189,7 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = g.gameUC.JoinGame(ctx, gameJoinRequest, userID)
+	err = g.gameUC.JoinGame(ctx, play, userID)
 	if err != nil {
 		g.log.Error(err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: "+err.Error())
@@ -197,17 +198,17 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 
 	// Обновляем кэш activeGames – если игра уже активна в памяти, обновляем информацию об игроках.
 	activeGamesMu.Lock()
-	if existingGame, ok := activeGames[gameJoinRequest.GameKeyPublic]; ok {
+	if existingGame, ok := activeGames[play.GameKeySecret]; ok {
 		if play.PlayerBlack == userID {
-			existingGame.PlayerWhite = userID
-		} else if play.PlayerWhite == userID {
 			existingGame.PlayerBlack = userID
+		} else if play.PlayerWhite == userID {
+			existingGame.PlayerWhite = userID
 		}
 	} else {
 		// Если игры ещё нет в кэше, достаём из базы и добавляем
 		retrievedGame, err := g.gameUC.GetGameByPublicKey(ctx, gameJoinRequest.GameKeyPublic)
 		if err == nil {
-			activeGames[gameJoinRequest.GameKeyPublic] = &retrievedGame
+			activeGames[play.GameKeySecret] = &retrievedGame
 		}
 	}
 	activeGamesMu.Unlock()
@@ -235,19 +236,17 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Сначала ищем игру в кэше, если её нет — достаём из базы и сохраняем в activeGames
+	retrievedGame, err := g.gameUC.GetGameByPublicKey(ctx, gameID)
+	if err != nil {
+		g.log.Error(err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	activeGamesMu.Lock()
-	ag, ok := activeGames[gameID]
+	ag, ok := activeGames[retrievedGame.GameKeySecret]
 	if !ok {
-		activeGamesMu.Unlock()
-		retrievedGame, err := g.gameUC.GetGameByID(ctx, gameID)
-		if err != nil {
-			g.log.Error(err)
-			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		activeGamesMu.Lock()
-		activeGames[gameID] = &retrievedGame
+		activeGames[retrievedGame.GameKeySecret] = &retrievedGame
 		ag = &retrievedGame
 	}
 	activeGamesMu.Unlock()
@@ -288,7 +287,7 @@ func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		g.log.Info("Получен ход: ", move)
-		sgfString, err := g.gameUC.AddMoveToGameSgf(gameID, move)
+		sgfString, err := g.gameUC.AddMoveToGameSgf(ag.GameKeySecret, move)
 		if err != nil {
 			g.log.Error(err)
 			conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))

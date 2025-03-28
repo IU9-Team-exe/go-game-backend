@@ -59,16 +59,7 @@ func (g *GameUseCase) CreateGame(ctx context.Context, newGameRequest game.Create
 	return nil, gameKeyPublic, gameKeySecret
 }
 
-func (g *GameUseCase) JoinGame(ctx context.Context, gameJoinData game.GameJoinRequest, userID string) (err error) {
-	play, err := g.store.GetGameByPublicKey(ctx, gameJoinData.GameKeyPublic)
-	if err != nil {
-		return err
-	}
-
-	if play.GameKeySecret == "" {
-		return fmt.Errorf("игры с ключом %s не найдено", gameJoinData.GameKeyPublic)
-	}
-
+func (g *GameUseCase) JoinGame(ctx context.Context, play game.Game, userID string) (err error) {
 	updatedGame, ok := g.store.AddPlayer(ctx, userID, play.GameKeySecret)
 	if !ok {
 		return errors.ErrCreateGameFailed
