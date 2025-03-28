@@ -37,8 +37,8 @@ type GameCreateResponse struct {
 }
 
 type GameJoinRequest struct {
-	GameKey string `json:"public_key" bson:"public_key"`
-	Role    string `json:"role" bson:"role"`
+	GameKeyPublic string `json:"public_key" bson:"public_key"`
+	Role          string `json:"role" bson:"role"`
 }
 
 type GameStateResponse struct {

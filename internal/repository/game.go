@@ -88,7 +88,7 @@ func (g *GameRepository) PutGameToMongoDatabase(ctx context.Context, gameData ga
 	return true
 }
 
-func (g *GameRepository) AddPlayer(ctx context.Context, newUser game.GameUser, gameKey string) bool {
+func (g *GameRepository) AddPlayer(ctx context.Context, userId string, gameKey string) (game.Game, bool) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -97,22 +97,18 @@ func (g *GameRepository) AddPlayer(ctx context.Context, newUser game.GameUser, g
 	filter := bson.M{"game_key": gameKey}
 
 	update := bson.M{}
-	if newUser.Color == "white" {
+
+	userColor := g.CalculateUserColor(ctx, gameKey, userId)
+	if userColor == "white" {
 		update = bson.M{
-			"$push": bson.M{
-				"users": newUser,
-			},
 			"$set": bson.M{
-				"player_white": newUser.ID,
+				"player_white": userId,
 			},
 		}
-	} else {
+	} else if userColor == "black" {
 		update = bson.M{
-			"$push": bson.M{
-				"users": newUser,
-			},
 			"$set": bson.M{
-				"player_black": newUser.ID,
+				"player_black": userId,
 			},
 		}
 	}
@@ -122,16 +118,53 @@ func (g *GameRepository) AddPlayer(ctx context.Context, newUser game.GameUser, g
 	res, err := collection.UpdateOne(ctx, filter, update, opts)
 	if err != nil {
 		g.log.Errorf("failed to update game to database: %v", err)
-		return false
+		return game.Game{}, false
 	}
 
 	if res.MatchedCount == 0 {
 		g.log.Infof("игра с ключом %s не найдена", gameKey)
 	}
 
-	g.log.Infof("Пользователь добавлен к игре с ключом %s", gameKey)
+	var updatedGame game.Game
+	err = collection.FindOne(ctx, filter).Decode(&updatedGame)
+	if err != nil {
+		g.log.Errorf("ошибка при получении обновлённой игры: %v", err)
+		return game.Game{}, false
+	}
 
-	return true
+	g.log.Infof("Пользователь %s (%s) добавлен к игре %s", userId, userColor, gameKey)
+
+	return updatedGame, true
+}
+
+func (g *GameRepository) GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (game.Game, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	collection := g.mongo.Collection("games")
+	filter := bson.M{
+		"$and": []bson.M{
+			{
+				"game_key_public": gameKeyPublic,
+			},
+			{
+				"status": bson.M{
+					"$ne": statuses.StatusCompleted,
+				},
+			},
+		},
+	}
+
+	foundGame := game.Game{}
+
+	err := collection.FindOne(ctx, filter).Decode(&foundGame)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return foundGame, nil
+	} else if err != nil {
+		g.log.Error(err)
+		return foundGame, err
+	}
+
+	return foundGame, nil
 }
 
 func (g *GameRepository) GetUserByID(ctx context.Context, userID string) game.GameUser {
@@ -139,9 +172,9 @@ func (g *GameRepository) GetUserByID(ctx context.Context, userID string) game.Ga
 	// логика получения юзера
 
 	user := game.GameUser{}
-	user.ID = joinRequest.UserID
-	user.Role = joinRequest.Role
-	user.Color = g.CalculateUserColor(ctx, joinRequest.GameKey, joinRequest.UserID)
+	/*	user.ID = userID
+		user.Role = joinRequest.Role
+		user.Color = g.CalculateUserColor(ctx, joinRequest.GameKey, joinRequest.UserID)*/
 	return user
 }
 

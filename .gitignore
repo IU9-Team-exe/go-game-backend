@@ -11,6 +11,7 @@ bin
 *.dylib
 .tar
 .yml
+.pdf
 # Test binary, built with `go test -c`
 *.test
 

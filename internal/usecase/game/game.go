@@ -15,12 +15,13 @@ import (
 type GameStore interface {
 	GenerateGameKeys(ctx context.Context) (gameKeySecret string, gameKeyPublic string)
 	PutGameToMongoDatabase(ctx context.Context, gameData game.Game) bool
-	AddPlayer(ctx context.Context, newUser game.GameUser, gameKey string) bool
-	ConvertToUserFromJoinReq(ctx context.Context, joinRequest game.GameJoinRequest) game.GameUser
+	AddPlayer(ctx context.Context, userId string, gameKey string) (game.Game, bool)
 	GetGameByGameKey(ctx context.Context, gameKey string) game.Game
 	SaveSGFToRedis(key string, sgfText string) error
 	LoadSGFFromRedis(key string) (string, error)
 	HasUserActiveGameByUserId(ctx context.Context, userID string) (bool, error)
+	GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (game.Game, error)
+	GetUserByID(ctx context.Context, userID string) game.GameUser
 }
 
 type GameUseCase struct {
@@ -49,7 +50,7 @@ func (g *GameUseCase) CreateGame(ctx context.Context, newGameRequest game.Create
 		newGame.PlayerWhite = creatorID
 	}
 
-	// getUserById - TODO и добавить в срез Users
+	// getUserById - TODO добавить его в срез Users
 
 	ok := g.store.PutGameToMongoDatabase(ctx, newGame)
 	if !ok {
@@ -58,26 +59,42 @@ func (g *GameUseCase) CreateGame(ctx context.Context, newGameRequest game.Create
 	return nil, gameKeyPublic, gameKeySecret
 }
 
-func (g *GameUseCase) JoinGame(ctx context.Context, gameJoinData game.GameJoinRequest) (err error) {
-	newUser := g.store.ConvertToUserFromJoinReq(ctx, gameJoinData)
-	ok := g.store.AddPlayer(ctx, newUser, gameJoinData.GameKey)
-	if !ok {
-		return errors.ErrCreateGameFailed
-	}
-
-	foundGame, err := g.GetGameByID(ctx, gameJoinData.GameKey)
+func (g *GameUseCase) JoinGame(ctx context.Context, gameJoinData game.GameJoinRequest, userID string) (err error) {
+	play, err := g.store.GetGameByPublicKey(ctx, gameJoinData.GameKeyPublic)
 	if err != nil {
 		return err
 	}
 
-	minSGF := g.PrepareSgfFile(foundGame)
+	if play.GameKeySecret == "" {
+		return fmt.Errorf("игры с ключом %s не найдено", gameJoinData.GameKeyPublic)
+	}
+
+	updatedGame, ok := g.store.AddPlayer(ctx, userID, play.GameKeySecret)
+	if !ok {
+		return errors.ErrCreateGameFailed
+	}
+
+	minSGF := g.PrepareSgfFile(updatedGame)
 	sgfString := SerializeSGF(&minSGF)
-	err = g.store.SaveSGFToRedis(foundGame.GameKeySecret, sgfString)
+	err = g.store.SaveSGFToRedis(updatedGame.GameKeySecret, sgfString)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (g *GameUseCase) GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (game.Game, error) {
+	play, err := g.store.GetGameByPublicKey(ctx, gameKeyPublic)
+	if err != nil {
+		return game.Game{}, err
+	}
+
+	if play.GameKeySecret == "" {
+		return game.Game{}, fmt.Errorf("игры с ключом %s не найдено", gameKeyPublic)
+	}
+
+	return play, nil
 }
 
 func (g *GameUseCase) GetGameByID(ctx context.Context, gameUniqueKey string) (game.Game, error) {
