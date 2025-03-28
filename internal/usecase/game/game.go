@@ -59,20 +59,20 @@ func (g *GameUseCase) CreateGame(ctx context.Context, newGameRequest game.Create
 	return nil, gameKeyPublic, gameKeySecret
 }
 
-func (g *GameUseCase) JoinGame(ctx context.Context, play game.Game, userID string) (err error) {
+func (g *GameUseCase) JoinGame(ctx context.Context, play game.Game, userID string) (game game.Game, err error) {
 	updatedGame, ok := g.store.AddPlayer(ctx, userID, play.GameKeySecret)
 	if !ok {
-		return errors.ErrCreateGameFailed
+		return game, errors.ErrCreateGameFailed
 	}
 
 	minSGF := g.PrepareSgfFile(updatedGame)
 	sgfString := SerializeSGF(&minSGF)
 	err = g.store.SaveSGFToRedis(updatedGame.GameKeySecret, sgfString)
 	if err != nil {
-		return err
+		return game, err
 	}
 
-	return nil
+	return updatedGame, nil
 }
 
 func (g *GameUseCase) GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (game.Game, error) {

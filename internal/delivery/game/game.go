@@ -189,7 +189,7 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = g.gameUC.JoinGame(ctx, play, userID)
+	play, err = g.gameUC.JoinGame(ctx, play, userID)
 	if err != nil {
 		g.log.Error(err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "ошибка при добавлении в игру: "+err.Error())
