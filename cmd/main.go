@@ -2,15 +2,16 @@ package main
 
 import (
 	"context"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
 
 	"team_exe/internal/adapters"
 	"team_exe/internal/bootstrap"
@@ -82,6 +83,7 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 
 	r.Post("/login", h.auth.Login)
 	r.Delete("/logout", h.auth.Logout)
+	r.Post("/register", h.auth.Register)
 	r.Post("/autoBotGenerateMove", h.katago.HandleGenerateMove)
 	r.Post("/NewGame", h.game.HandleNewGame)
 	r.Post("/JoinGame", h.game.HandleJoinGame)
@@ -117,7 +119,7 @@ func initializeDeliveryHandlers(
 	katagoManager := katagoProto.NewKatagoServiceClient(grpcKatago)
 	katagoDeliveryHandler := katagoDelivery.NewKatagoHandler(cfg, log, katagoManager)
 
-	authDeliveryHandler := authDelivery.NewMapAuthHandler(databaseAdapters.redisAdapter)
+	authDeliveryHandler := authDelivery.NewMapAuthHandler(databaseAdapters.redisAdapter, databaseAdapters.mongoAdapter)
 	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter, authDeliveryHandler)
 
 	return &mainDeliveryHandler{

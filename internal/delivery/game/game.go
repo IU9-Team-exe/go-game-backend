@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/websocket"
-	"go.uber.org/zap"
 	"io"
 	"log"
 	"net/http"
@@ -15,8 +13,10 @@ import (
 	"team_exe/internal/delivery/auth"
 	"team_exe/internal/domain/game"
 	"team_exe/internal/httpresponse"
-	repo "team_exe/internal/repository"
 	gameuc "team_exe/internal/usecase/game"
+
+	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
 type GameHandler struct {
@@ -37,9 +37,9 @@ var activeGamesMu sync.RWMutex
 
 func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *adapters.AdapterMongo, redisAdapter *adapters.AdapterRedis, authHandler *auth.AuthHandler) *GameHandler {
 	return &GameHandler{
-		cfg:         cfg,
-		log:         log,
-		gameUC:      gameuc.NewGameUseCase(repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database)),
+		cfg: cfg,
+		log: log,
+		//gameUC:      gameuc.NewGameUseCase(repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database)),
 		authHandler: authHandler,
 	}
 }
@@ -204,19 +204,19 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 
 	// Обновляем кэш activeGames – если игра уже активна в памяти, обновляем информацию об игроках.
 	activeGamesMu.Lock()
-	if existingGame, ok := activeGames[newGamerRequest.GameKey]; ok {
-		if newGamerRequest.Role == "black" {
-			existingGame.PlayerBlack = newGamerRequest.UserID
-		} else if newGamerRequest.Role == "white" {
-			existingGame.PlayerWhite = newGamerRequest.UserID
-		}
-	} else {
-		// Если игры ещё нет в кэше, достаём из базы и добавляем
-		retrievedGame, err := g.gameUC.GetGameByID(ctx, newGamerRequest.GameKey)
-		if err == nil {
-			activeGames[newGamerRequest.GameKey] = &retrievedGame
-		}
-	}
+	/*	if existingGame, ok := activeGames[newGamerRequest.GameKey]; ok {
+			if newGamerRequest.Role == "black" {
+				//existingGame.PlayerBlack = newGamerRequest.UserID
+			} else if newGamerRequest.Role == "white" {
+				//existingGame.PlayerWhite = newGamerRequest.UserID
+			}
+		} else {
+			// Если игры ещё нет в кэше, достаём из базы и добавляем
+			retrievedGame, err := g.gameUC.GetGameByID(ctx, newGamerRequest.GameKey)
+			if err == nil {
+				activeGames[newGamerRequest.GameKey] = &retrievedGame
+			}
+		}*/
 	activeGamesMu.Unlock()
 
 	resp := JsonOKResponse{

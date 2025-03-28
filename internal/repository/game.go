@@ -6,17 +6,18 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net/http"
+	"team_exe/internal/bootstrap"
+	"team_exe/internal/domain/game"
+	"team_exe/internal/statuses"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/zap"
-	"net/http"
-	"team_exe/internal/bootstrap"
-	"team_exe/internal/domain/game"
-	"team_exe/internal/statuses"
-	"time"
 )
 
 type GameRepository struct {
@@ -139,9 +140,9 @@ func (g *GameRepository) GetUserByID(ctx context.Context, userID string) game.Ga
 	// логика получения юзера
 
 	user := game.GameUser{}
-	user.ID = joinRequest.UserID
-	user.Role = joinRequest.Role
-	user.Color = g.CalculateUserColor(ctx, joinRequest.GameKey, joinRequest.UserID)
+	/*	user.ID = joinRequest.UserID
+		user.Role = joinRequest.Role
+		user.Color = g.CalculateUserColor(ctx, joinRequest.GameKey, joinRequest.UserID)*/
 	return user
 }
 
