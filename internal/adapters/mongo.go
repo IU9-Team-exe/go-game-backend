@@ -30,16 +30,16 @@ func (a *AdapterMongo) Init(ctx context.Context) error {
 	ctxConnect, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	client, err := mongo.Connect(ctxConnect, clientOpts)
+	Client, err := mongo.Connect(ctxConnect, clientOpts)
 	if err != nil {
 		return fmt.Errorf("ошибка подключения к MongoDB: %w", err)
 	}
 
-	if err = client.Ping(ctx, nil); err != nil {
+	if err = Client.Ping(ctx, nil); err != nil {
 		log.Fatalf("Не удалось пропинговать MongoDB: %v", err)
 	}
 
-	a.Database = client.Database("team_exe")
+	a.Database = Client.Database("team_exe")
 
 	log.Println("Успешно подключено к MongoDB")
 	return nil

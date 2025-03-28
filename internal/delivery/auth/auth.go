@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"team_exe/internal/adapters"
+	errors2 "team_exe/internal/errors"
 	"team_exe/internal/httpresponse"
 	repo "team_exe/internal/repository"
 	authUC "team_exe/internal/usecase/auth"
@@ -17,10 +18,10 @@ type AuthHandler struct {
 	usecaseHandler *authUC.AuthUsecaseHandler
 }
 
-func NewMapAuthHandler(redis *adapters.AdapterRedis) *AuthHandler {
+func NewMapAuthHandler(redis *adapters.AdapterRedis, mongo *adapters.AdapterMongo) *AuthHandler {
 	return &AuthHandler{
 		usecaseHandler: authUC.NewUserUsecaseHandler(
-			repo.NewMapUserStorage(),
+			repo.NewMongoUserStorage(mongo),
 			repo.NewSessionRedisStorage(redis.GetClient()),
 		),
 	}
@@ -43,9 +44,8 @@ func (a *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		slog.Error(err.Error())
 		return
 	}
-
-	loginData := registerRequest{}
-	err = json.Unmarshal(requestBody, &loginData)
+	registerData := registerRequest{}
+	err = json.Unmarshal(requestBody, &registerData)
 	if err != nil {
 		slog.Error(err.Error())
 		httpresponse.WriteResponseWithStatus(w, 400,
@@ -53,18 +53,14 @@ func (a *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID, err := a.usecaseHandler.LoginUser(loginData.Username, loginData.Password)
+	sessionID, err := a.usecaseHandler.RegisterUser(registerData.Username, registerData.Email, registerData.Password)
+
 	if err != nil {
-		if errors.Is(err, authUC.ErrUserNotFound) {
+		if errors.Is(err, errors2.ErrUserExists) {
 			httpresponse.WriteResponseWithStatus(w, 400,
-				httpresponse.ErrorResponse{ErrorDescription: "Пользователь не найден"})
-			return
-		} else if errors.Is(err, authUC.ErrWrongPassword) {
-			httpresponse.WriteResponseWithStatus(w, 400,
-				httpresponse.ErrorResponse{ErrorDescription: "Неверный пароль"})
+				httpresponse.ErrorResponse{ErrorDescription: "Пользователь с таким именем уже существует"})
 			return
 		}
-		// иная непредвиденная ошибка
 		httpresponse.WriteResponseWithStatus(w, 500,
 			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
 		return
@@ -96,11 +92,11 @@ func (a *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID, err := a.usecaseHandler.LoginUser(loginData.Username, loginData.Password)
 	if err != nil {
-		if errors.Is(err, authUC.ErrUserNotFound) {
+		if errors.Is(err, errors2.ErrUserNotFound) {
 			httpresponse.WriteResponseWithStatus(w, 400,
 				httpresponse.ErrorResponse{ErrorDescription: "Пользователь не найден"})
 			return
-		} else if errors.Is(err, authUC.ErrWrongPassword) {
+		} else if errors.Is(err, errors2.ErrWrongPassword) {
 			httpresponse.WriteResponseWithStatus(w, 400,
 				httpresponse.ErrorResponse{ErrorDescription: "Неверный пароль"})
 			return
@@ -155,7 +151,7 @@ func (a *AuthHandler) GetUserID(w http.ResponseWriter, r *http.Request) string {
 
 	userID, err := a.usecaseHandler.GetUserIdFromSession(sessionIDCookie.Value)
 	if err != nil {
-		if errors.Is(err, authUC.ErrSessionNotFound) {
+		if errors.Is(err, errors2.ErrSessionNotFound) {
 			httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized,
 				httpresponse.ErrorResponse{ErrorDescription: "Сессия не найдена или истекла"})
 			return ""

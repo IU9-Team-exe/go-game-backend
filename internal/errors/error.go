@@ -9,4 +9,6 @@ var (
 	ErrCreateGameFailed = errors.New("create game failed")
 	ErrJoinGameFailed   = errors.New("join game failed")
 	ErrGameNotFound     = errors.New("game not found")
+	ErrUserExists       = errors.New("user already exists")
+	ErrInternal         = errors.New("internal error")
 )
