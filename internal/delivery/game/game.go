@@ -137,7 +137,39 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *GameHandler) LeaveGame(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		g.log.Error("Only POST method is allowed")
+		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
+		return
+	}
 
+	userID := g.authHandler.GetUserID(w, r)
+	if userID == "" {
+		g.log.Error("Не нашли userID в куке")
+		return
+	}
+
+	var gameLeaveRequest game.GameLeaveRequest
+	if err := utils.DecodeJSONRequest(r, &gameLeaveRequest); err != nil {
+		g.log.Error("JSON decode error:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if gameLeaveRequest.GameKeyPublic == "" {
+		g.log.Error("запрос на покидание игры не содержит ключа игры!")
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Invalid JSON: ")
+		return
+	}
+
+	ctx := r.Context()
+	ok, err := g.gameUC.LeaveGame(ctx, gameLeaveRequest.GameKeyPublic, userID)
+	if err != nil || !ok {
+		g.log.Error(err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "success leave game")
 }
 
 func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {

@@ -42,6 +42,10 @@ type GameJoinRequest struct {
 	Role          string `json:"role" bson:"role"`
 }
 
+type GameLeaveRequest struct {
+	GameKeyPublic string `json:"public_key" bson:"public_key"`
+}
+
 type GameStateResponse struct {
 	Move Move   `json:"move"`
 	SGF  string `json:"sgf"`

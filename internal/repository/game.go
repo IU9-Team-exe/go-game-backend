@@ -178,6 +178,47 @@ func (g *GameRepository) GetUserByID(ctx context.Context, userID string) game.Ga
 	return user
 }
 
+func (g *GameRepository) LeaveGameBySecretKey(ctx context.Context, secretKey string, userID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	collection := g.mongo.Collection("games")
+	filter := bson.M{
+		"game_key": secretKey,
+	}
+
+	var foundGame game.Game
+	err := collection.FindOne(ctx, filter).Decode(&foundGame)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return fmt.Errorf("игры с id %s не найдено", secretKey)
+	}
+	if err != nil {
+		g.log.Error("ошибка при поиске игры:", err)
+		return err
+	}
+	updateFields := bson.M{}
+	if foundGame.PlayerBlack == userID {
+		updateFields["player_black"] = ""
+	}
+	if foundGame.PlayerWhite == userID {
+		updateFields["player_white"] = ""
+	}
+
+	if len(updateFields) > 0 {
+		_, err = collection.UpdateOne(
+			ctx,
+			bson.M{"game_key": foundGame.GameKeySecret},
+			bson.M{"$set": updateFields},
+		)
+		if err != nil {
+			g.log.Error("ошибка при апдейте игры:", err)
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (g *GameRepository) CalculateUserColor(ctx context.Context, gameKey string, userID string) string {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -288,4 +329,37 @@ func (g *GameRepository) HasUserActiveGameByUserId(ctx context.Context, userID s
 	}
 
 	return true, nil
+}
+
+func (g *GameRepository) GetActiveGameByUserId(ctx context.Context, userID string) (game.Game, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	collection := g.mongo.Collection("games")
+	filter := bson.M{
+		"$and": []bson.M{
+			{
+				"$or": []bson.M{
+					{"player_black": userID},
+					{"player_white": userID},
+				},
+			},
+			{
+				"status": bson.M{
+					"$ne": statuses.StatusCompleted,
+				},
+			},
+		},
+	}
+
+	play := game.Game{}
+	err := collection.FindOne(ctx, filter).Decode(&play)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		g.log.Error(fmt.Errorf("No active game found for user %s", userID))
+		return play, fmt.Errorf("No active game found for user %s", userID)
+	} else if err != nil {
+		g.log.Error(err)
+		return play, err
+	}
+
+	return play, nil
 }

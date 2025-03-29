@@ -22,6 +22,8 @@ type GameStore interface {
 	HasUserActiveGameByUserId(ctx context.Context, userID string) (bool, error)
 	GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (game.Game, error)
 	GetUserByID(ctx context.Context, userID string) game.GameUser
+	GetActiveGameByUserId(ctx context.Context, userID string) (game.Game, error)
+	LeaveGameBySecretKey(ctx context.Context, secretKey string, userID string) error
 }
 
 type GameUseCase struct {
@@ -73,6 +75,20 @@ func (g *GameUseCase) JoinGame(ctx context.Context, play game.Game, userID strin
 	}
 
 	return updatedGame, nil
+}
+
+func (g *GameUseCase) LeaveGame(ctx context.Context, gamePublicKey, userID string) (bool, error) {
+	play, err := g.store.GetActiveGameByUserId(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+
+	err = g.store.LeaveGameBySecretKey(ctx, play.GameKeySecret, userID)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func (g *GameUseCase) GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (game.Game, error) {

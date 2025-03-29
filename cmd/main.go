@@ -89,6 +89,7 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Post("/JoinGame", h.game.HandleJoinGame)
 	r.Get("/startGame", h.game.HandleStartGame)
 	r.Post("/getGameByPublicKey", h.game.GetGameByPublicKey)
+	r.Post("/leaveGame", h.game.LeaveGame)
 }
 
 func initDatabaseAdapters(ctx context.Context, log *zap.SugaredLogger, cfg bootstrap.Config) *dataBaseAdapters {
