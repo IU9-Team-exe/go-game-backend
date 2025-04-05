@@ -1,6 +1,8 @@
-package repo
+package repository
 
-import "team_exe/internal/domain/user"
+import (
+	"team_exe/internal/domain/user"
+)
 
 type UserMapStorage struct {
 	users map[int]user.User

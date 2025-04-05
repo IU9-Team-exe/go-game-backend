@@ -55,6 +55,12 @@ type GetGameInfoRequest struct {
 	GamePublicKey string `json:"game_key" bson:"game_key"`
 }
 
+type GetGameInfoResponse struct {
+	Game                Game   `json:"game"`
+	PlayerBlackNickname string `json:"player_black_nickname" bson:"player_black_nickname"`
+	PlayerWhiteNickname string `json:"player_white_nickname" bson:"player_white_nickname"`
+}
+
 type CreateGameRequest struct {
 	BoardSize      int     `json:"board_size" bson:"board_size"`
 	Komi           float64 `json:"komi" bson:"komi"`

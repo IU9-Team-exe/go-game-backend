@@ -58,6 +58,7 @@ func (g *GameHandler) GetGameByPublicKey(w http.ResponseWriter, r *http.Request)
 	decoder.DisallowUnknownFields()
 
 	var gameData game.GetGameInfoRequest
+
 	if err = decoder.Decode(&gameData); err != nil {
 		g.log.Error("JSON decode error:", err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
@@ -69,6 +70,7 @@ func (g *GameHandler) GetGameByPublicKey(w http.ResponseWriter, r *http.Request)
 			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
 		return
 	}
+
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, gameByID)
 }
 

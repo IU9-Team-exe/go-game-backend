@@ -13,6 +13,10 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
+	_ "team_exe/docs"
+
+	httpSwagger "github.com/swaggo/http-swagger"
+
 	"team_exe/internal/adapters"
 	"team_exe/internal/bootstrap"
 	authDelivery "team_exe/internal/delivery/auth"
@@ -32,6 +36,15 @@ type dataBaseAdapters struct {
 	redisAdapter *adapters.AdapterRedis
 	mongoAdapter *adapters.AdapterMongo
 }
+
+// @version 1.0
+// @description Документация API авторизации и пользователей
+// @host localhost:8080
+// @BasePath /api
+
+// @securityDefinitions.apikey ApiKeyAuth
+// @in cookie
+// @name sessionID
 
 func main() {
 	logger := NewLogger()
@@ -82,7 +95,7 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Use(middleware.Logger)
 
 	r.Post("/login", h.auth.Login)
-	r.Delete("/logout", h.auth.Logout)
+	r.Post("/logout", h.auth.Logout)
 	r.Post("/register", h.auth.Register)
 	r.Post("/autoBotGenerateMove", h.katago.HandleGenerateMove)
 	r.Post("/NewGame", h.game.HandleNewGame)
@@ -90,6 +103,8 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Get("/startGame", h.game.HandleStartGame)
 	r.Post("/getGameByPublicKey", h.game.GetGameByPublicKey)
 	r.Post("/leaveGame", h.game.LeaveGame)
+	r.Post("/getUserById", h.auth.GetUserByID)
+	r.Get("/swagger/*", httpSwagger.WrapHandler)
 }
 
 func initDatabaseAdapters(ctx context.Context, log *zap.SugaredLogger, cfg bootstrap.Config) *dataBaseAdapters {
@@ -120,7 +135,7 @@ func initializeDeliveryHandlers(
 	katagoManager := katagoProto.NewKatagoServiceClient(grpcKatago)
 	katagoDeliveryHandler := katagoDelivery.NewKatagoHandler(cfg, log, katagoManager)
 
-	authDeliveryHandler := authDelivery.NewMapAuthHandler(databaseAdapters.redisAdapter, databaseAdapters.mongoAdapter)
+	authDeliveryHandler := authDelivery.NewAuthHandler(databaseAdapters.redisAdapter, databaseAdapters.mongoAdapter, log)
 	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter, authDeliveryHandler)
 
 	return &mainDeliveryHandler{

@@ -1,4 +1,4 @@
-package repo
+package repository
 
 import (
 	"context"
@@ -9,12 +9,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/zap"
 	"net/http"
 	"team_exe/internal/bootstrap"
 	"team_exe/internal/domain/game"
+	"team_exe/internal/domain/user"
 	"team_exe/internal/statuses"
 	"time"
 )
@@ -167,15 +169,32 @@ func (g *GameRepository) GetGameByPublicKey(ctx context.Context, gameKeyPublic s
 	return foundGame, nil
 }
 
-func (g *GameRepository) GetUserByID(ctx context.Context, userID string) game.GameUser {
+func (g *GameRepository) GetUserByID(ctx context.Context, userID string) (user.User, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
-	// логика получения юзера
+	idStr := "67e66998ecd55bbca68bc38b"
 
-	user := game.GameUser{}
-	/*	user.ID = userID
-		user.Role = joinRequest.Role
-		user.Color = g.CalculateUserColor(ctx, joinRequest.GameKey, joinRequest.UserID)*/
-	return user
+	// конвертируем её в ObjectID
+	userIdObj, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		return user.User{}, err
+	}
+
+	filter := bson.M{"_id": userIdObj}
+	collection := g.mongo.Collection("users")
+
+	var result user.User
+	err = collection.FindOne(ctx, filter).Decode(&result)
+
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			g.log.Errorf("юзер с ID %s не найден", userID)
+			return user.User{}, fmt.Errorf("user with id %s not found", userID)
+		}
+	}
+
+	return result, nil
 }
 
 func (g *GameRepository) LeaveGameBySecretKey(ctx context.Context, secretKey string, userID string) error {

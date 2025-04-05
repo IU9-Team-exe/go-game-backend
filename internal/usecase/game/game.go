@@ -21,7 +21,6 @@ type GameStore interface {
 	LoadSGFFromRedis(key string) (string, error)
 	HasUserActiveGameByUserId(ctx context.Context, userID string) (bool, error)
 	GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (game.Game, error)
-	GetUserByID(ctx context.Context, userID string) game.GameUser
 	GetActiveGameByUserId(ctx context.Context, userID string) (game.Game, error)
 	LeaveGameBySecretKey(ctx context.Context, secretKey string, userID string) error
 }
@@ -107,6 +106,24 @@ func (g *GameUseCase) GetGameByPublicKey(ctx context.Context, gameKeyPublic stri
 	}
 
 	play.Sgf = sgfStringOfGame
+
+	return play, nil
+}
+
+func (g *GameUseCase) GetGameInfoByPublicKey(ctx context.Context, gameKeyPublic string) (game.Game, error) {
+	play, err := g.store.GetGameByPublicKey(ctx, gameKeyPublic)
+	if err != nil {
+		return game.Game{}, err
+	}
+
+	if play.GameKeySecret == "" {
+		return game.Game{}, fmt.Errorf("игры с ключом %s не найдено", gameKeyPublic)
+	}
+	sgfStringOfGame, _ := g.GetSgfStringByGameKey(play.GameKeySecret)
+
+	play.Sgf = sgfStringOfGame
+
+	//playerBlackNickname :=
 
 	return play, nil
 }

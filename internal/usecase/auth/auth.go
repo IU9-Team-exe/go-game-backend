@@ -1,8 +1,11 @@
 package auth
 
 import (
-	userDomain "team_exe/internal/domain/user"
-	errors2 "team_exe/internal/errors"
+	"context"
+	"fmt"
+
+	"team_exe/internal/domain/user"
+	"team_exe/internal/errors"
 	"team_exe/internal/random"
 )
 
@@ -11,6 +14,22 @@ type AuthUsecaseHandler struct {
 	sessionStorage SessionStorage
 }
 
+// UserStorage описывает операции с данными пользователя.
+type UserStorage interface {
+	CheckExists(username string) bool
+	GetUser(username string) (user.User, bool)
+	GetUserByID(ctx context.Context, userID string) (user.User, error)
+	CreateUser(username, email, password string) (user.User, error)
+}
+
+// SessionStorage описывает операции над сессиями (чтение, запись, удаление).
+type SessionStorage interface {
+	GetUserIdBySession(sessionID string) (string, bool)
+	StoreSession(sessionID, userID string)
+	DeleteSession(sessionID string) bool
+}
+
+// NewUserUsecaseHandler создает новый обработчик бизнес-логики для аутентификации.
 func NewUserUsecaseHandler(u UserStorage, s SessionStorage) *AuthUsecaseHandler {
 	return &AuthUsecaseHandler{
 		userStorage:    u,
@@ -18,77 +37,78 @@ func NewUserUsecaseHandler(u UserStorage, s SessionStorage) *AuthUsecaseHandler 
 	}
 }
 
-type UserStorage interface {
-	CheckExists(username string) bool
-	GetUser(username string) (userDomain.User, bool)
-	GetUserByID(id string) (userDomain.User, bool)
-	CreateUser(username, email, password string) (userDomain.User, error)
-}
-
-type SessionStorage interface {
-	GetUserIdBySession(sessionID string) (userID string, ok bool)
-	StoreSession(sessionID string, userID string)
-	DeleteSession(sessionID string) (ok bool)
-}
-
-// может вернуть ErrUserExists, ErrInternal
-func (a *AuthUsecaseHandler) RegisterUser(username string, email string, password string) (sessionID string, err error) {
-	//TODO проверить имя, почту и пароль на валидность
-	user, err := a.userStorage.CreateUser(username, email, password)
+// RegisterUser создает пользователя и автоматически логинит его (создаёт сессию).
+// Может вернуть:
+//   - errors.ErrUserExists, если пользователь с таким именем уже существует
+//   - errors.ErrInternal, если произошла внутренняя ошибка
+func (a *AuthUsecaseHandler) RegisterUser(username, email, password string) (string, error) {
+	// TODO делать дополнительную валидацию username/email/password
+	createdUser, err := a.userStorage.CreateUser(username, email, password)
 	if err != nil {
 		return "", err
 	}
-	sessionID, err = a.LoginUser(user.Username, password)
+	sessionID, err := a.LoginUser(createdUser.Username, password)
 	if err != nil {
 		return "", err
 	}
 	return sessionID, nil
 }
 
-func (a *AuthUsecaseHandler) CheckAuthorized(sessionID string) (ok bool, user userDomain.User) {
-	userID, found := a.sessionStorage.GetUserIdBySession(sessionID)
-	if !found {
-		return false, userDomain.User{}
-	}
-	user, ok = a.userStorage.GetUserByID(userID)
-	if !ok {
-		return false, userDomain.User{}
-	}
-	return ok, user
+// CheckAuthorized проверяет, есть ли валидная сессия по данному sessionID.
+func (a *AuthUsecaseHandler) CheckAuthorized(ctx context.Context, sessionID string) bool {
+	_, found := a.sessionStorage.GetUserIdBySession(sessionID)
+	return found
 }
 
-func (a *AuthUsecaseHandler) LoginUser(providedUsername string, providedPassword string) (sessionID string, err error) {
-	exists := a.userStorage.CheckExists(providedUsername)
-	if !exists {
-		return "", errors2.ErrUserNotFound
+// GetUserBySessionId возвращает данные пользователя по sessionID.
+func (a *AuthUsecaseHandler) GetUserBySessionId(ctx context.Context, sessionID string) (user.User, error) {
+	userID, found := a.sessionStorage.GetUserIdBySession(sessionID)
+	if !found {
+		return user.User{}, fmt.Errorf("user not found by session id: %s", sessionID)
+	}
+	return a.userStorage.GetUserByID(ctx, userID)
+}
+
+// GetUserByUserId возвращает пользователя по его userID.
+func (a *AuthUsecaseHandler) GetUserByUserId(ctx context.Context, userID string) (user.User, error) {
+	return a.userStorage.GetUserByID(ctx, userID)
+}
+
+// LoginUser проверяет существование пользователя и правильность пароля.
+// Возвращает sessionID, если все ок. Может вернуть:
+//   - errors.ErrUserNotFound, если пользователь не найден
+//   - errors.ErrWrongPassword, если неверный пароль
+func (a *AuthUsecaseHandler) LoginUser(providedUsername, providedPassword string) (string, error) {
+	if !a.userStorage.CheckExists(providedUsername) {
+		return "", errors.ErrUserNotFound
 	}
 
 	userFromDb, _ := a.userStorage.GetUser(providedUsername)
 	if providedPassword != userFromDb.PasswordHash {
-		return "", errors2.ErrWrongPassword
+		return "", errors.ErrWrongPassword
 	}
 
-	sessionID = random.RandString(64)
+	sessionID := random.RandString(64)
 	a.sessionStorage.StoreSession(sessionID, userFromDb.ID)
 	return sessionID, nil
 }
 
+// LogoutUser удаляет сессию пользователя. Может вернуть errors.ErrSessionNotFound.
 func (a *AuthUsecaseHandler) LogoutUser(sessionID string) error {
-	_, ok := a.sessionStorage.GetUserIdBySession(sessionID)
-	if !ok {
-		return errors2.ErrSessionNotFound
+	if _, ok := a.sessionStorage.GetUserIdBySession(sessionID); !ok {
+		return errors.ErrSessionNotFound
 	}
 	if !a.sessionStorage.DeleteSession(sessionID) {
-		return errors2.ErrSessionNotFound
+		return errors.ErrSessionNotFound
 	}
 	return nil
 }
 
-// Новый метод для получения userID из сессии
+// GetUserIdFromSession возвращает userID по sessionID или ошибку ErrSessionNotFound.
 func (a *AuthUsecaseHandler) GetUserIdFromSession(sessionID string) (string, error) {
 	userID, ok := a.sessionStorage.GetUserIdBySession(sessionID)
 	if !ok {
-		return "", errors2.ErrSessionNotFound
+		return "", errors.ErrSessionNotFound
 	}
 	return userID, nil
 }

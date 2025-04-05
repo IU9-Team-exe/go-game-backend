@@ -22,3 +22,8 @@ func DecodeJSONRequest(r *http.Request, dst interface{}) error {
 	}
 	return nil
 }
+
+func ReadRequestBody(r *http.Request) ([]byte, error) {
+	defer r.Body.Close()
+	return io.ReadAll(r.Body)
+}
