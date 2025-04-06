@@ -2,6 +2,7 @@ package user
 
 import "time"
 
+// @name User
 type User struct {
 	ID             string            `json:"id" bson:"_id,omitempty"`
 	Username       string            `json:"Username" bson:"username"`
@@ -19,6 +20,7 @@ type User struct {
 	PasswordSalt   string            `bson:"password_salt"`
 }
 
+// @name UserStatistic
 type UserStatistic struct {
 	Wins         int      `json:"wins" bson:"wins"`
 	Losses       int      `json:"losses" bson:"losses"`

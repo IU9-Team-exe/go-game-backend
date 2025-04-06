@@ -11,7 +11,7 @@ type Node struct {
 	Properties map[string][]string // Свойства могут повторяться (например, AB[aa][bb])
 }
 
-// SGF представляет корневой элемент SGF-файла
+// @name SGF
 type SGF struct {
 	Root *GameTree
 }

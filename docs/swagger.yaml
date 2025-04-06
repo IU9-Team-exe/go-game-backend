@@ -26,6 +26,19 @@ definitions:
       text:
         type: string
     type: object
+  team_exe_internal_domain_game.ArchiveNamesResponse:
+    properties:
+      names:
+        items:
+          $ref: '#/definitions/team_exe_internal_domain_game.NameGameStruct'
+        type: array
+      page:
+        type: integer
+      pages_total:
+        type: integer
+      total:
+        type: integer
+    type: object
   team_exe_internal_domain_game.ArchiveResponse:
     properties:
       games:
@@ -38,6 +51,13 @@ definitions:
         type: integer
       total:
         type: integer
+    type: object
+  team_exe_internal_domain_game.ArchiveYearsResponse:
+    properties:
+      years:
+        items:
+          $ref: '#/definitions/team_exe_internal_domain_game.YearGameStruct'
+        type: array
     type: object
   team_exe_internal_domain_game.CreateGameRequest:
     properties:
@@ -172,12 +192,26 @@ definitions:
       coordinates:
         type: string
     type: object
+  team_exe_internal_domain_game.NameGameStruct:
+    properties:
+      count_of_games:
+        type: integer
+      name:
+        type: string
+    type: object
   team_exe_internal_domain_game.Result:
     properties:
       pointDiff:
         type: number
       winColor:
         type: string
+    type: object
+  team_exe_internal_domain_game.YearGameStruct:
+    properties:
+      count_of_games:
+        type: integer
+      year:
+        type: integer
     type: object
   team_exe_internal_domain_user.User:
     properties:
@@ -363,6 +397,35 @@ paths:
       summary: Получить игру по публичному ключу
       tags:
       - game
+  /getNamesInArchive:
+    get:
+      consumes:
+      - application/json
+      description: Возвращает отсортированный массив годов (int), доступных в архиве
+        чужих партий.
+      parameters:
+      - description: Номер страницы для пагинации
+        in: query
+        name: page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Ответ с массивом годов
+          schema:
+            $ref: '#/definitions/team_exe_internal_domain_game.ArchiveNamesResponse'
+        "400":
+          description: Ошибка получения годов из архива
+          schema:
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+        "405":
+          description: Метод не разрешен
+          schema:
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+      summary: Получить массив годов из архива
+      tags:
+      - game
   /getUserById:
     post:
       consumes:
@@ -409,7 +472,7 @@ paths:
         "200":
           description: Ответ с массивом годов
           schema:
-            $ref: '#/definitions/team_exe_internal_domain_game.ArchiveResponse'
+            $ref: '#/definitions/team_exe_internal_domain_game.ArchiveYearsResponse'
         "400":
           description: Ошибка получения годов из архива
           schema:

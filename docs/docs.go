@@ -202,6 +202,49 @@ const docTemplate = `{
                 }
             }
         },
+        "/getNamesInArchive": {
+            "get": {
+                "description": "Возвращает отсортированный массив годов (int), доступных в архиве чужих партий.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "game"
+                ],
+                "summary": "Получить массив годов из архива",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Номер страницы для пагинации",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Ответ с массивом годов",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_domain_game.ArchiveNamesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Ошибка получения годов из архива",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Метод не разрешен",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/getUserById": {
             "post": {
                 "description": "Возвращает пользователя по ID. Требуется авторизация (cookie sessionID).",
@@ -271,7 +314,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Ответ с массивом годов",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_domain_game.ArchiveResponse"
+                            "$ref": "#/definitions/team_exe_internal_domain_game.ArchiveYearsResponse"
                         }
                     },
                     "400": {
@@ -534,6 +577,26 @@ const docTemplate = `{
                 }
             }
         },
+        "team_exe_internal_domain_game.ArchiveNamesResponse": {
+            "type": "object",
+            "properties": {
+                "names": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/team_exe_internal_domain_game.NameGameStruct"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "pages_total": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "team_exe_internal_domain_game.ArchiveResponse": {
             "type": "object",
             "properties": {
@@ -551,6 +614,17 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.ArchiveYearsResponse": {
+            "type": "object",
+            "properties": {
+                "years": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/team_exe_internal_domain_game.YearGameStruct"
+                    }
                 }
             }
         },
@@ -758,6 +832,17 @@ const docTemplate = `{
                 }
             }
         },
+        "team_exe_internal_domain_game.NameGameStruct": {
+            "type": "object",
+            "properties": {
+                "count_of_games": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "team_exe_internal_domain_game.Result": {
             "type": "object",
             "properties": {
@@ -766,6 +851,17 @@ const docTemplate = `{
                 },
                 "winColor": {
                     "type": "string"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.YearGameStruct": {
+            "type": "object",
+            "properties": {
+                "count_of_games": {
+                    "type": "integer"
+                },
+                "year": {
+                    "type": "integer"
                 }
             }
         },

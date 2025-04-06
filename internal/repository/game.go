@@ -402,7 +402,7 @@ func (g *GameRepository) GetArchiveGamesByName(ctx context.Context, name string,
 		Games:             matchedGames,
 		Page:              pageNum,
 		TotalCountOfGames: countOfAllGames,
-		PagesTotal:        (countOfAllGames + g.cfg.PageLimit - 1) / g.cfg.PageLimit,
+		PagesTotal:        (countOfAllGames + g.cfg.PageLimitGames - 1) / g.cfg.PageLimitGames,
 	}, nil
 }
 
@@ -424,7 +424,7 @@ func (g *GameRepository) GetArchiveGamesByYear(ctx context.Context, year int, pa
 		Games:             matchedGames,
 		Page:              pageNum,
 		TotalCountOfGames: countOfAllGames,
-		PagesTotal:        (countOfAllGames + g.cfg.PageLimit - 1) / g.cfg.PageLimit,
+		PagesTotal:        (countOfAllGames + g.cfg.PageLimitGames - 1) / g.cfg.PageLimitGames,
 	}, nil
 }
 
@@ -438,8 +438,8 @@ func (g *GameRepository) FetchGames(ctx context.Context, pageNum int, filter bso
 
 	opts := options.Find().
 		SetSort(sort).
-		SetSkip(int64((pageNum - 1) * g.cfg.PageLimit)).
-		SetLimit(int64(g.cfg.PageLimit))
+		SetSkip(int64((pageNum - 1) * g.cfg.PageLimitGames)).
+		SetLimit(int64(g.cfg.PageLimitGames))
 
 	cursor, err := coll.Find(ctx, filter, opts)
 	if err != nil {
@@ -470,20 +470,13 @@ func (g *GameRepository) GetArchiveYears(ctx context.Context) (*game.ArchiveYear
 			}},
 		}}},
 		{{Key: "$group", Value: bson.D{
-			{Key: "_id", Value: nil},
-			{Key: "years", Value: bson.D{
-				{Key: "$addToSet", Value: "$year"},
+			{Key: "_id", Value: "$year"},
+			{Key: "count_of_games", Value: bson.D{
+				{Key: "$sum", Value: 1},
 			}},
 		}}},
-		{{Key: "$unwind", Value: "$years"}},
 		{{Key: "$sort", Value: bson.D{
-			{Key: "years", Value: 1},
-		}}},
-		{{Key: "$group", Value: bson.D{
-			{Key: "_id", Value: nil},
-			{Key: "years", Value: bson.D{
-				{Key: "$push", Value: "$years"},
-			}},
+			{Key: "_id", Value: 1},
 		}}},
 	}
 
@@ -493,17 +486,110 @@ func (g *GameRepository) GetArchiveYears(ctx context.Context) (*game.ArchiveYear
 	}
 	defer cursor.Close(ctx)
 
-	var result []struct {
-		Years []int `bson:"years"`
+	var rawResult []struct {
+		Year         int `bson:"_id"`
+		CountOfGames int `bson:"count_of_games"`
 	}
 
-	if err := cursor.All(ctx, &result); err != nil {
+	if err := cursor.All(ctx, &rawResult); err != nil {
 		return nil, fmt.Errorf("cursor decoding error: %w", err)
 	}
 
-	if len(result) == 0 {
-		return &game.ArchiveYearsResponse{Years: []int{}}, nil
+	response := &game.ArchiveYearsResponse{
+		Years: make([]game.YearGameStruct, 0, len(rawResult)),
 	}
 
-	return &game.ArchiveYearsResponse{Years: result[0].Years}, nil
+	for _, item := range rawResult {
+		response.Years = append(response.Years, game.YearGameStruct{
+			Year:         item.Year,
+			CountOfGames: item.CountOfGames,
+		})
+	}
+
+	return response, nil
+}
+
+func (g *GameRepository) GetArchiveNames(ctx context.Context, pageNum int) (*game.ArchiveNamesResponse, error) {
+	if pageNum < 1 {
+		pageNum = 1
+	}
+
+	coll := g.mongo.Collection("archive")
+
+	mainPipeline := mongo.Pipeline{
+		{{Key: "$project", Value: bson.D{
+			{Key: "player", Value: bson.A{"$black_player", "$white_player"}},
+		}}},
+		{{Key: "$unwind", Value: "$player"}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$player"},
+			{Key: "count_of_games", Value: bson.D{{Key: "$sum", Value: 1}}},
+		}}},
+		{{Key: "$sort", Value: bson.D{{Key: "count_of_games", Value: -1}}}},
+		{{Key: "$skip", Value: (pageNum - 1) * g.cfg.PageLimitPlayers}},
+		{{Key: "$limit", Value: g.cfg.PageLimitPlayers}},
+	}
+
+	cursor, err := coll.Aggregate(ctx, mainPipeline)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate error: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var rawResult []struct {
+		Name         string `bson:"_id"`
+		CountOfGames int    `bson:"count_of_games"`
+	}
+
+	if err := cursor.All(ctx, &rawResult); err != nil {
+		return nil, fmt.Errorf("cursor decoding error: %w", err)
+	}
+
+	countPipeline := mongo.Pipeline{
+		{{Key: "$project", Value: bson.D{
+			{Key: "player", Value: bson.A{"$black_player", "$white_player"}},
+		}}},
+		{{Key: "$unwind", Value: "$player"}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$player"},
+		}}},
+		{{Key: "$count", Value: "total"}},
+	}
+
+	countCursor, err := coll.Aggregate(ctx, countPipeline)
+	if err != nil {
+		return nil, fmt.Errorf("count aggregate error: %w", err)
+	}
+	defer countCursor.Close(ctx)
+
+	var countResult []struct {
+		Total int `bson:"total"`
+	}
+
+	if err := countCursor.All(ctx, &countResult); err != nil {
+		return nil, fmt.Errorf("count decode error: %w", err)
+	}
+
+	total := 0
+	if len(countResult) > 0 {
+		total = countResult[0].Total
+	}
+
+	pagesTotal := (total + g.cfg.PageLimitPlayers - 1) / g.cfg.PageLimitPlayers // округление вверх
+
+	response := &game.ArchiveNamesResponse{
+		Names:             make([]game.NameGameStruct, 0, len(rawResult)),
+		TotalCountOfNames: total,
+		Page:              pageNum,
+		PagesTotal:        pagesTotal,
+	}
+
+	for _, item := range rawResult {
+		response.Names = append(response.Names, game.NameGameStruct{
+			Name:         item.Name,
+			CountOfGames: item.CountOfGames,
+		})
+	}
+
+	return response, nil
 }

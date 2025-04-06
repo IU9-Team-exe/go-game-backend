@@ -106,6 +106,7 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Post("/getUserById", h.auth.GetUserByID)
 	r.Get("/getArchive", h.game.HandleGetArchivePaginator)
 	r.Get("/getYearsInArchive", h.game.HandleGetYearsInArchive)
+	r.Get("/getNamesInArchive", h.game.HandleGetNamesInArchive)
 
 	r.Get("/swagger/*", httpSwagger.WrapHandler)
 }

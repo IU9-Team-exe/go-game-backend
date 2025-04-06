@@ -473,7 +473,7 @@ func (g *GameHandler) HandleGetArchivePaginator(w http.ResponseWriter, r *http.R
 // @Tags game
 // @Accept json
 // @Produce json
-// @Success 200 {object} game.ArchiveResponse "Ответ с массивом годов"
+// @Success 200 {object} game.ArchiveYearsResponse "Ответ с массивом годов"
 // @Failure 400 {object} httpresponse.ErrorResponse "Ошибка получения годов из архива"
 // @Failure 405 {object} httpresponse.ErrorResponse "Метод не разрешен"
 // @Router /getYearsInArchive [get]
@@ -496,6 +496,50 @@ func (g *GameHandler) HandleGetYearsInArchive(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		g.log.Error("Ошибка получения годов из архива: ", err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, fmt.Sprintf("ошибка получения годов из архива: %v", err))
+		return
+	}
+
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+}
+
+// HandleGetNamesInArchive godoc
+// @Summary Получить массив годов из архива
+// @Description Возвращает отсортированный массив годов (int), доступных в архиве чужих партий.
+// @Tags game
+// @Accept json
+// @Produce json
+// @Param page query int false "Номер страницы для пагинации"
+// @Success 200 {object} game.ArchiveNamesResponse "Ответ с массивом годов"
+// @Failure 400 {object} httpresponse.ErrorResponse "Ошибка получения годов из архива"
+// @Failure 405 {object} httpresponse.ErrorResponse "Метод не разрешен"
+// @Router /getNamesInArchive [get]
+func (g *GameHandler) HandleGetNamesInArchive(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		g.log.Error("Разрешен только метод GET")
+		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод GET")
+		return
+	}
+
+	userID := g.authHandler.GetUserID(w, r)
+	if userID == "" {
+		g.log.Error("UserID не найден в cookie")
+		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "UserID не найден в cookie")
+		return
+	}
+
+	pageNum := r.URL.Query().Get("page")
+	pageNumInt, err := strconv.Atoi(pageNum)
+	if err != nil {
+		g.log.Error(err)
+		httpresponse.WriteResponseWithStatus(w, 400, fmt.Errorf("ошибка преобразования года: "+err.Error()))
+		return
+	}
+
+	ctx := r.Context()
+	resp, err := g.gameUC.GetListOfArchiveNames(ctx, pageNumInt)
+	if err != nil {
+		g.log.Error("Ошибка получения игроков из архива: ", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, fmt.Sprintf("ошибка получения игроков из архива: %v", err))
 		return
 	}
 

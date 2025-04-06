@@ -5,14 +5,15 @@ import (
 )
 
 type Config struct {
-	ServerPort    string `mapstructure:"SERVER_PORT"`
-	GpuServerIp   string `mapstructure:"GPU_SERVER_IP"`
-	GpuServerPort string `mapstructure:"GPU_SERVER_PORT"`
-	KatagoBotUrl  string `mapstructure:"KATAGO_BOT_URL"`
-	RedisUrl      string `mapstructure:"REDIS_URL"`
-	MongoUri      string `mapstructure:"MONGO_URI"`
-	IsLocalCors   bool   `mapstructure:"LOCAL_CORS"`
-	PageLimit     int    `mapstructure:"PAGE_LIMIT"`
+	ServerPort       string `mapstructure:"SERVER_PORT"`
+	GpuServerIp      string `mapstructure:"GPU_SERVER_IP"`
+	GpuServerPort    string `mapstructure:"GPU_SERVER_PORT"`
+	KatagoBotUrl     string `mapstructure:"KATAGO_BOT_URL"`
+	RedisUrl         string `mapstructure:"REDIS_URL"`
+	MongoUri         string `mapstructure:"MONGO_URI"`
+	IsLocalCors      bool   `mapstructure:"LOCAL_CORS"`
+	PageLimitGames   int    `mapstructure:"PAGE_LIMIT_GAMES"`
+	PageLimitPlayers int    `mapstructure:"PAGE_LIMIT_PLAYERS"`
 }
 
 func Setup(cfgPath string) (*Config, error) {

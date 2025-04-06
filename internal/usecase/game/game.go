@@ -27,6 +27,7 @@ type GameStore interface {
 	GetArchiveGamesByYear(ctx context.Context, year int, pageNum int) (*game.ArchiveResponse, error)
 	GetArchiveYears(ctx context.Context) (*game.ArchiveYearsResponse, error)
 	GetArchiveGamesByName(ctx context.Context, name string, pageNum int) (*game.ArchiveResponse, error)
+	GetArchiveNames(ctx context.Context, pageNum int) (*game.ArchiveNamesResponse, error)
 }
 
 type GameUseCase struct {
@@ -280,6 +281,14 @@ func (g *GameUseCase) GetListOfArchiveYears(ctx context.Context) (*game.ArchiveY
 	resp, err := g.store.GetArchiveYears(ctx)
 	if err == nil {
 		resp.Years = resp.Years[2 : len(resp.Years)-2]
+	}
+	return resp, err
+}
+
+func (g *GameUseCase) GetListOfArchiveNames(ctx context.Context, pageNum int) (*game.ArchiveNamesResponse, error) {
+	resp, err := g.store.GetArchiveNames(ctx, pageNum)
+	if err == nil {
+		//resp.Years = resp.Years[2 : len(resp.Years)-2]
 	}
 	return resp, err
 }
