@@ -1,13 +1,13 @@
 basePath: /api
 definitions:
-  auth.LoginRequest:
+  internal_delivery_auth.LoginRequest:
     properties:
       Password:
         type: string
       Username:
         type: string
     type: object
-  auth.RegisterRequest:
+  internal_delivery_auth.RegisterRequest:
     properties:
       Email:
         type: string
@@ -16,17 +16,170 @@ definitions:
       Username:
         type: string
     type: object
-  auth.UserFindRequest:
+  internal_delivery_auth.UserFindRequest:
     properties:
       user_id:
         type: string
     type: object
-  httpresponse.ErrorResponse:
+  internal_delivery_game.JsonOKResponse:
     properties:
-      ErrorDescription:
+      text:
         type: string
     type: object
-  user.User:
+  team_exe_internal_domain_game.ArchiveResponse:
+    properties:
+      games:
+        items:
+          $ref: '#/definitions/team_exe_internal_domain_game.GameFromArchive'
+        type: array
+      page:
+        type: integer
+      pages_total:
+        type: integer
+      total:
+        type: integer
+    type: object
+  team_exe_internal_domain_game.CreateGameRequest:
+    properties:
+      board_size:
+        type: integer
+      is_creator_black:
+        type: boolean
+      komi:
+        type: number
+    type: object
+  team_exe_internal_domain_game.Game:
+    properties:
+      board_size:
+        type: integer
+      created_at:
+        type: string
+      current_turn:
+        type: string
+      game_key:
+        description: уникальный ключ
+        type: string
+      game_key_public:
+        type: string
+      komi:
+        type: number
+      moves:
+        items:
+          $ref: '#/definitions/team_exe_internal_domain_game.Move'
+        type: array
+      player_black:
+        type: string
+      player_white:
+        type: string
+      sgf:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      users:
+        items:
+          $ref: '#/definitions/team_exe_internal_domain_game.GameUser'
+        type: array
+      who_is_next:
+        description: color
+        type: string
+    type: object
+  team_exe_internal_domain_game.GameCreateResponse:
+    properties:
+      public_key:
+        type: string
+    type: object
+  team_exe_internal_domain_game.GameFromArchive:
+    properties:
+      blackPlayer:
+        type: string
+      blackRank:
+        type: string
+      boardSize:
+        type: integer
+      date:
+        type: string
+      event:
+        type: string
+      komi:
+        type: number
+      moves:
+        items:
+          $ref: '#/definitions/team_exe_internal_domain_game.Move'
+        type: array
+      result:
+        $ref: '#/definitions/team_exe_internal_domain_game.Result'
+      rules:
+        type: string
+      sgf:
+        type: string
+      whitePlayer:
+        type: string
+      whiteRank:
+        type: string
+    type: object
+  team_exe_internal_domain_game.GameJoinRequest:
+    properties:
+      public_key:
+        type: string
+      role:
+        type: string
+    type: object
+  team_exe_internal_domain_game.GameLeaveRequest:
+    properties:
+      public_key:
+        type: string
+    type: object
+  team_exe_internal_domain_game.GameStateResponse:
+    properties:
+      move:
+        $ref: '#/definitions/team_exe_internal_domain_game.Move'
+      sgf:
+        type: string
+    type: object
+  team_exe_internal_domain_game.GameUser:
+    properties:
+      color:
+        type: string
+      id:
+        type: string
+      rating:
+        type: number
+      role:
+        type: string
+      score:
+        type: number
+    type: object
+  team_exe_internal_domain_game.GetGameInfoRequest:
+    properties:
+      game_key:
+        type: string
+    type: object
+  team_exe_internal_domain_game.GetGameInfoResponse:
+    properties:
+      game:
+        $ref: '#/definitions/team_exe_internal_domain_game.Game'
+      player_black_nickname:
+        type: string
+      player_white_nickname:
+        type: string
+    type: object
+  team_exe_internal_domain_game.Move:
+    properties:
+      color:
+        type: string
+      coordinates:
+        type: string
+    type: object
+  team_exe_internal_domain_game.Result:
+    properties:
+      pointDiff:
+        type: number
+      winColor:
+        type: string
+    type: object
+  team_exe_internal_domain_user.User:
     properties:
       Username:
         type: string
@@ -53,13 +206,13 @@ definitions:
           type: string
         type: object
       statistic:
-        $ref: '#/definitions/user.UserStatistic'
+        $ref: '#/definitions/team_exe_internal_domain_user.UserStatistic'
       status:
         type: string
       updated_at:
         type: string
     type: object
-  user.UserStatistic:
+  team_exe_internal_domain_user.UserStatistic:
     properties:
       achievements:
         items:
@@ -72,12 +225,144 @@ definitions:
       wins:
         type: integer
     type: object
+  team_exe_internal_httpresponse.ErrorResponse:
+    properties:
+      ErrorDescription:
+        type: string
+    type: object
 host: localhost:8080
 info:
   contact: {}
   description: Документация API авторизации и пользователей
   version: "1.0"
 paths:
+  /JoinGame:
+    post:
+      consumes:
+      - application/json
+      description: Позволяет пользователю присоединиться к игре, используя публичный
+        ключ игры и роль. Требуется авторизация через cookie.
+      parameters:
+      - description: Запрос на присоединение к игре
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/team_exe_internal_domain_game.GameJoinRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Пользователь успешно присоединился к игре
+          schema:
+            $ref: '#/definitions/internal_delivery_game.JsonOKResponse'
+        "400":
+          description: Неверный запрос или игра не найдена
+          schema:
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+        "405":
+          description: Разрешен только метод POST
+          schema:
+            type: string
+      summary: Присоединиться к игре
+      tags:
+      - game
+  /NewGame:
+    post:
+      consumes:
+      - application/json
+      description: Создает новую игру с указанными параметрами (размер доски, коми
+        и роль). Требуется авторизация через cookie.
+      parameters:
+      - description: Запрос на создание новой игры
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/team_exe_internal_domain_game.CreateGameRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Игра успешно создана
+          schema:
+            $ref: '#/definitions/team_exe_internal_domain_game.GameCreateResponse'
+        "400":
+          description: Неверный запрос
+          schema:
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+        "405":
+          description: Разрешен только метод POST
+          schema:
+            type: string
+      summary: Создать новую игру
+      tags:
+      - game
+  /getArchive:
+    get:
+      consumes:
+      - application/json
+      description: 'Возвращает архив игр с постраничной разбивкой, с возможностью
+        фильтрации по году или имени игрока. Обязательно необходимо указать хотя бы
+        один из параметров: год (year) или имя (name).'
+      parameters:
+      - description: Фильтр по году (обязателен, если не указан параметр name)
+        in: query
+        name: year
+        type: integer
+      - description: Фильтр по имени игрока (обязателен, если не указан параметр year)
+        in: query
+        name: name
+        type: string
+      - description: Номер страницы для пагинации
+        in: query
+        name: page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Ответ с архивом игр с пагинацией
+          schema:
+            $ref: '#/definitions/team_exe_internal_domain_game.ArchiveResponse'
+        "400":
+          description: Неверный запрос или ошибка при получении архива
+          schema:
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+      summary: Получить архив игр с пагинацией
+      tags:
+      - game
+  /getGameByPublicKey:
+    post:
+      consumes:
+      - application/json
+      description: Возвращает подробную информацию об игре по публичному ключу, переданному
+        в теле запроса.
+      parameters:
+      - description: Запрос с публичным ключом игры
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/team_exe_internal_domain_game.GetGameInfoRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Успешное получение информации об игре
+          schema:
+            $ref: '#/definitions/team_exe_internal_domain_game.GetGameInfoResponse'
+        "400":
+          description: Неверный запрос или ошибка JSON
+          schema:
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+      summary: Получить игру по публичному ключу
+      tags:
+      - game
   /getUserById:
     post:
       consumes:
@@ -89,22 +374,22 @@ paths:
         name: user
         required: true
         schema:
-          $ref: '#/definitions/auth.UserFindRequest'
+          $ref: '#/definitions/internal_delivery_auth.UserFindRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/user.User'
+            $ref: '#/definitions/team_exe_internal_domain_user.User'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
         "405":
           description: Only POST method is allowed
           schema:
@@ -112,6 +397,37 @@ paths:
       summary: Получение информации о пользователе
       tags:
       - user
+  /leave:
+    post:
+      consumes:
+      - application/json
+      description: Позволяет пользователю покинуть игру, передав публичный ключ игры.
+        Требуется авторизация через cookie.
+      parameters:
+      - description: Запрос на покидание игры
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/team_exe_internal_domain_game.GameLeaveRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Пользователь успешно покинул игру
+          schema:
+            type: string
+        "400":
+          description: Неверный запрос или ошибка JSON
+          schema:
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+        "405":
+          description: Разрешен только метод POST
+          schema:
+            type: string
+      summary: Покинуть игру
+      tags:
+      - game
   /login:
     post:
       consumes:
@@ -124,7 +440,7 @@ paths:
         name: login
         required: true
         schema:
-          $ref: '#/definitions/auth.LoginRequest'
+          $ref: '#/definitions/internal_delivery_auth.LoginRequest'
       produces:
       - application/json
       responses:
@@ -135,11 +451,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
       summary: Вход пользователя
       tags:
       - auth
@@ -156,7 +472,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
       summary: Выход пользователя
       tags:
       - auth
@@ -171,7 +487,7 @@ paths:
         name: register
         required: true
         schema:
-          $ref: '#/definitions/auth.RegisterRequest'
+          $ref: '#/definitions/internal_delivery_auth.RegisterRequest'
       produces:
       - application/json
       responses:
@@ -182,14 +498,40 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
       summary: Регистрация нового пользователя
       tags:
       - auth
+  /startGame:
+    get:
+      consumes:
+      - application/json
+      description: Обновляет HTTP-соединение до WebSocket для обмена ходами в режиме
+        реального времени.
+      parameters:
+      - description: Идентификатор игры
+        in: query
+        name: game_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Обновление состояния игры в реальном времени
+          schema:
+            $ref: '#/definitions/team_exe_internal_domain_game.GameStateResponse'
+        "400":
+          description: Неверный запрос
+          schema:
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+      summary: Запуск игры через WebSocket
+      tags:
+      - game
 securityDefinitions:
   ApiKeyAuth:
     in: cookie

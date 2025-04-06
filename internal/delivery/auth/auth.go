@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/zap"
 	"team_exe/internal/adapters"
+	_ "team_exe/internal/domain/user"
 	errs "team_exe/internal/errors"
 	"team_exe/internal/httpresponse"
 	"team_exe/internal/repository"

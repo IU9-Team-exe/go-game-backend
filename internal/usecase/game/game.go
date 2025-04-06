@@ -23,6 +23,8 @@ type GameStore interface {
 	GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (game.Game, error)
 	GetActiveGameByUserId(ctx context.Context, userID string) (game.Game, error)
 	LeaveGameBySecretKey(ctx context.Context, secretKey string, userID string) error
+
+	GetArchiveGamesByYear(ctx context.Context, year int, pageNum int) (*game.ArchiveResponse, error)
 }
 
 type GameUseCase struct {
@@ -251,4 +253,16 @@ func (g *GameUseCase) HasUserActiveGamesByUserId(ctx context.Context, userID str
 		return true, err
 	}
 	return isAlreadyInGame, nil
+}
+
+func (g *GameUseCase) GetArchiveOfGames(ctx context.Context, pageNumber, year int, name string) (*game.ArchiveResponse, error) {
+	if year != 0 {
+		archiveResp, err := g.store.GetArchiveGamesByYear(ctx, year, pageNumber)
+		if err != nil {
+			return nil, err
+		}
+		return archiveResp, nil
+	}
+
+	return nil, nil
 }

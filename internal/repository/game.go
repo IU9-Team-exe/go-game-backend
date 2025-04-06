@@ -382,3 +382,58 @@ func (g *GameRepository) GetActiveGameByUserId(ctx context.Context, userID strin
 
 	return play, nil
 }
+
+func (g *GameRepository) GetArchiveGamesByYear(ctx context.Context, year int, pageNum int) (*game.ArchiveResponse, error) {
+	filter := bson.M{}
+	filter["date"] = bson.M{
+		"$gte": time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC),
+		"$lt":  time.Date(year+1, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	sort := bson.D{{"date", -1}}
+
+	matchedGames, countOfAllGames, err := g.FetchGames(ctx, pageNum, filter, sort)
+	if err != nil {
+		return nil, err
+	}
+
+	return &game.ArchiveResponse{
+		Games:             matchedGames,
+		Page:              pageNum,
+		TotalCountOfGames: countOfAllGames,
+		PagesTotal:        (countOfAllGames + g.cfg.PageLimit - 1) / g.cfg.PageLimit,
+	}, nil
+}
+
+func (g *GameRepository) FetchGames(ctx context.Context, pageNum int, filter bson.M, sort bson.D) ([]game.GameFromArchive, int, error) {
+	coll := g.mongo.Collection("archive")
+
+	total, err := coll.CountDocuments(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	opts := options.Find().
+		SetSort(sort).
+		SetSkip(int64((pageNum - 1) * g.cfg.PageLimit)).
+		SetLimit(int64(g.cfg.PageLimit))
+
+	cursor, err := coll.Find(ctx, filter, opts)
+	if err != nil {
+		fmt.Println(err)
+		return nil, 0, err
+	}
+	defer cursor.Close(ctx)
+
+	var games []game.GameFromArchive
+	err = cursor.All(ctx, &games)
+	if err != nil {
+		fmt.Println(err)
+		return nil, 0, err
+	}
+
+	fmt.Println(len(games))
+
+	return games, int(total), nil
+
+}

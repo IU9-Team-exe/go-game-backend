@@ -24,6 +24,26 @@ type Game struct {
 	Sgf           string          `json:"sgf" bson:"sgf"`
 }
 
+type GameFromArchive struct {
+	BlackPlayer string    `bson:"black_player"`
+	WhitePlayer string    `bson:"white_player"`
+	Date        time.Time `bson:"date"`
+	Moves       []Move    `bson:"moves"`
+	Komi        float64   `bson:"komi"`
+	Rules       string    `bson:"rules"`
+	Result      Result    `bson:"result"`
+	BlackRank   string    `bson:"black_rank"`
+	WhiteRank   string    `bson:"white_rank"`
+	Event       string    `bson:"event"`
+	BoardSize   int       `bson:"board_size"`
+	Sgf         string    `bson:"sgf"`
+}
+
+type Result struct {
+	WinColor  string  `bson:"win_color"`
+	PointDiff float64 `bson:"point_diff"`
+}
+
 type GameUser struct {
 	ID     string          `json:"id" bson:"id"`
 	Role   string          `json:"role" bson:"role"`
@@ -65,4 +85,11 @@ type CreateGameRequest struct {
 	BoardSize      int     `json:"board_size" bson:"board_size"`
 	Komi           float64 `json:"komi" bson:"komi"`
 	IsCreatorBlack bool    `json:"is_creator_black" bson:"is_creator_black"`
+}
+
+type ArchiveResponse struct {
+	Games             []GameFromArchive `json:"games" bson:"games"`
+	TotalCountOfGames int               `json:"total" bson:"total"`
+	Page              int               `json:"page" bson:"page"`
+	PagesTotal        int               `json:"pages_total" bson:"pages_total"`
 }

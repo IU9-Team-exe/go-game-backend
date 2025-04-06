@@ -8,6 +8,193 @@
     "host": "localhost:8080",
     "basePath": "/api",
     "paths": {
+        "/JoinGame": {
+            "post": {
+                "description": "Позволяет пользователю присоединиться к игре, используя публичный ключ игры и роль. Требуется авторизация через cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "game"
+                ],
+                "summary": "Присоединиться к игре",
+                "parameters": [
+                    {
+                        "description": "Запрос на присоединение к игре",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_domain_game.GameJoinRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Пользователь успешно присоединился к игре",
+                        "schema": {
+                            "$ref": "#/definitions/internal_delivery_game.JsonOKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Неверный запрос или игра не найдена",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Разрешен только метод POST",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/NewGame": {
+            "post": {
+                "description": "Создает новую игру с указанными параметрами (размер доски, коми и роль). Требуется авторизация через cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "game"
+                ],
+                "summary": "Создать новую игру",
+                "parameters": [
+                    {
+                        "description": "Запрос на создание новой игры",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_domain_game.CreateGameRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Игра успешно создана",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_domain_game.GameCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Неверный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Разрешен только метод POST",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/getArchive": {
+            "get": {
+                "description": "Возвращает архив игр с постраничной разбивкой, с возможностью фильтрации по году или имени игрока. Обязательно необходимо указать хотя бы один из параметров: год (year) или имя (name).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "game"
+                ],
+                "summary": "Получить архив игр с пагинацией",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Фильтр по году (обязателен, если не указан параметр name)",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Фильтр по имени игрока (обязателен, если не указан параметр year)",
+                        "name": "name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Номер страницы для пагинации",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Ответ с архивом игр с пагинацией",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_domain_game.ArchiveResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Неверный запрос или ошибка при получении архива",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/getGameByPublicKey": {
+            "post": {
+                "description": "Возвращает подробную информацию об игре по публичному ключу, переданному в теле запроса.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "game"
+                ],
+                "summary": "Получить игру по публичному ключу",
+                "parameters": [
+                    {
+                        "description": "Запрос с публичным ключом игры",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_domain_game.GetGameInfoRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Успешное получение информации об игре",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_domain_game.GetGameInfoResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Неверный запрос или ошибка JSON",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/getUserById": {
             "post": {
                 "description": "Возвращает пользователя по ID. Требуется авторизация (cookie sessionID).",
@@ -28,7 +215,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.UserFindRequest"
+                            "$ref": "#/definitions/internal_delivery_auth.UserFindRequest"
                         }
                     }
                 ],
@@ -36,23 +223,69 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/user.User"
+                            "$ref": "#/definitions/team_exe_internal_domain_user.User"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
                         }
                     },
                     "405": {
                         "description": "Only POST method is allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/leave": {
+            "post": {
+                "description": "Позволяет пользователю покинуть игру, передав публичный ключ игры. Требуется авторизация через cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "game"
+                ],
+                "summary": "Покинуть игру",
+                "parameters": [
+                    {
+                        "description": "Запрос на покидание игры",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_domain_game.GameLeaveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Пользователь успешно покинул игру",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Неверный запрос или ошибка JSON",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Разрешен только метод POST",
                         "schema": {
                             "type": "string"
                         }
@@ -80,7 +313,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.LoginRequest"
+                            "$ref": "#/definitions/internal_delivery_auth.LoginRequest"
                         }
                     }
                 ],
@@ -94,13 +327,13 @@
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
                         }
                     }
                 }
@@ -126,7 +359,7 @@
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
                         }
                     }
                 }
@@ -152,7 +385,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.RegisterRequest"
+                            "$ref": "#/definitions/internal_delivery_auth.RegisterRequest"
                         }
                     }
                 ],
@@ -166,13 +399,51 @@
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/startGame": {
+            "get": {
+                "description": "Обновляет HTTP-соединение до WebSocket для обмена ходами в режиме реального времени.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "game"
+                ],
+                "summary": "Запуск игры через WebSocket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Идентификатор игры",
+                        "name": "game_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Обновление состояния игры в реальном времени",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_domain_game.GameStateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Неверный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
                         }
                     }
                 }
@@ -180,7 +451,7 @@
         }
     },
     "definitions": {
-        "auth.LoginRequest": {
+        "internal_delivery_auth.LoginRequest": {
             "type": "object",
             "properties": {
                 "Password": {
@@ -191,7 +462,7 @@
                 }
             }
         },
-        "auth.RegisterRequest": {
+        "internal_delivery_auth.RegisterRequest": {
             "type": "object",
             "properties": {
                 "Email": {
@@ -205,7 +476,7 @@
                 }
             }
         },
-        "auth.UserFindRequest": {
+        "internal_delivery_auth.UserFindRequest": {
             "type": "object",
             "properties": {
                 "user_id": {
@@ -213,15 +484,250 @@
                 }
             }
         },
-        "httpresponse.ErrorResponse": {
+        "internal_delivery_game.JsonOKResponse": {
             "type": "object",
             "properties": {
-                "ErrorDescription": {
+                "text": {
                     "type": "string"
                 }
             }
         },
-        "user.User": {
+        "team_exe_internal_domain_game.ArchiveResponse": {
+            "type": "object",
+            "properties": {
+                "games": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/team_exe_internal_domain_game.GameFromArchive"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "pages_total": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.CreateGameRequest": {
+            "type": "object",
+            "properties": {
+                "board_size": {
+                    "type": "integer"
+                },
+                "is_creator_black": {
+                    "type": "boolean"
+                },
+                "komi": {
+                    "type": "number"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.Game": {
+            "type": "object",
+            "properties": {
+                "board_size": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_turn": {
+                    "type": "string"
+                },
+                "game_key": {
+                    "description": "уникальный ключ",
+                    "type": "string"
+                },
+                "game_key_public": {
+                    "type": "string"
+                },
+                "komi": {
+                    "type": "number"
+                },
+                "moves": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/team_exe_internal_domain_game.Move"
+                    }
+                },
+                "player_black": {
+                    "type": "string"
+                },
+                "player_white": {
+                    "type": "string"
+                },
+                "sgf": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/team_exe_internal_domain_game.GameUser"
+                    }
+                },
+                "who_is_next": {
+                    "description": "color",
+                    "type": "string"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.GameCreateResponse": {
+            "type": "object",
+            "properties": {
+                "public_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.GameFromArchive": {
+            "type": "object",
+            "properties": {
+                "blackPlayer": {
+                    "type": "string"
+                },
+                "blackRank": {
+                    "type": "string"
+                },
+                "boardSize": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "event": {
+                    "type": "string"
+                },
+                "komi": {
+                    "type": "number"
+                },
+                "moves": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/team_exe_internal_domain_game.Move"
+                    }
+                },
+                "result": {
+                    "$ref": "#/definitions/team_exe_internal_domain_game.Result"
+                },
+                "rules": {
+                    "type": "string"
+                },
+                "sgf": {
+                    "type": "string"
+                },
+                "whitePlayer": {
+                    "type": "string"
+                },
+                "whiteRank": {
+                    "type": "string"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.GameJoinRequest": {
+            "type": "object",
+            "properties": {
+                "public_key": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.GameLeaveRequest": {
+            "type": "object",
+            "properties": {
+                "public_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.GameStateResponse": {
+            "type": "object",
+            "properties": {
+                "move": {
+                    "$ref": "#/definitions/team_exe_internal_domain_game.Move"
+                },
+                "sgf": {
+                    "type": "string"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.GameUser": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "rating": {
+                    "type": "number"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "score": {
+                    "type": "number"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.GetGameInfoRequest": {
+            "type": "object",
+            "properties": {
+                "game_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.GetGameInfoResponse": {
+            "type": "object",
+            "properties": {
+                "game": {
+                    "$ref": "#/definitions/team_exe_internal_domain_game.Game"
+                },
+                "player_black_nickname": {
+                    "type": "string"
+                },
+                "player_white_nickname": {
+                    "type": "string"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.Move": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "coordinates": {
+                    "type": "string"
+                }
+            }
+        },
+        "team_exe_internal_domain_game.Result": {
+            "type": "object",
+            "properties": {
+                "pointDiff": {
+                    "type": "number"
+                },
+                "winColor": {
+                    "type": "string"
+                }
+            }
+        },
+        "team_exe_internal_domain_user.User": {
             "type": "object",
             "properties": {
                 "Username": {
@@ -261,7 +767,7 @@
                     }
                 },
                 "statistic": {
-                    "$ref": "#/definitions/user.UserStatistic"
+                    "$ref": "#/definitions/team_exe_internal_domain_user.UserStatistic"
                 },
                 "status": {
                     "type": "string"
@@ -271,7 +777,7 @@
                 }
             }
         },
-        "user.UserStatistic": {
+        "team_exe_internal_domain_user.UserStatistic": {
             "type": "object",
             "properties": {
                 "achievements": {
@@ -288,6 +794,14 @@
                 },
                 "wins": {
                     "type": "integer"
+                }
+            }
+        },
+        "team_exe_internal_httpresponse.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "ErrorDescription": {
+                    "type": "string"
                 }
             }
         }

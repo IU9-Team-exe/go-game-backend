@@ -12,6 +12,7 @@ type Config struct {
 	RedisUrl      string `mapstructure:"REDIS_URL"`
 	MongoUri      string `mapstructure:"MONGO_URI"`
 	IsLocalCors   bool   `mapstructure:"LOCAL_CORS"`
+	PageLimit     int    `mapstructure:"PAGE_LIMIT"`
 }
 
 func Setup(cfgPath string) (*Config, error) {
