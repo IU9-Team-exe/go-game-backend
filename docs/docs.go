@@ -254,6 +254,41 @@ const docTemplate = `{
                 }
             }
         },
+        "/getYearsInArchive": {
+            "get": {
+                "description": "Возвращает отсортированный массив годов (int), доступных в архиве чужих партий.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "game"
+                ],
+                "summary": "Получить массив годов из архива",
+                "responses": {
+                    "200": {
+                        "description": "Ответ с массивом годов",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_domain_game.ArchiveResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Ошибка получения годов из архива",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Метод не разрешен",
+                        "schema": {
+                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/leave": {
             "post": {
                 "description": "Позволяет пользователю покинуть игру, передав публичный ключ игры. Требуется авторизация через cookie.",

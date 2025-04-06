@@ -383,6 +383,29 @@ func (g *GameRepository) GetActiveGameByUserId(ctx context.Context, userID strin
 	return play, nil
 }
 
+func (g *GameRepository) GetArchiveGamesByName(ctx context.Context, name string, pageNum int) (*game.ArchiveResponse, error) {
+	filter := bson.M{
+		"$or": bson.A{
+			bson.M{"black_player": name},
+			bson.M{"white_player": name},
+		},
+	}
+
+	sort := bson.D{{"date", -1}}
+
+	matchedGames, countOfAllGames, err := g.FetchGames(ctx, pageNum, filter, sort)
+	if err != nil {
+		return nil, err
+	}
+
+	return &game.ArchiveResponse{
+		Games:             matchedGames,
+		Page:              pageNum,
+		TotalCountOfGames: countOfAllGames,
+		PagesTotal:        (countOfAllGames + g.cfg.PageLimit - 1) / g.cfg.PageLimit,
+	}, nil
+}
+
 func (g *GameRepository) GetArchiveGamesByYear(ctx context.Context, year int, pageNum int) (*game.ArchiveResponse, error) {
 	filter := bson.M{}
 	filter["date"] = bson.M{
@@ -435,5 +458,52 @@ func (g *GameRepository) FetchGames(ctx context.Context, pageNum int, filter bso
 	fmt.Println(len(games))
 
 	return games, int(total), nil
+}
 
+func (g *GameRepository) GetArchiveYears(ctx context.Context) (*game.ArchiveYearsResponse, error) {
+	coll := g.mongo.Collection("archive")
+
+	pipeline := mongo.Pipeline{
+		{{Key: "$project", Value: bson.D{
+			{Key: "year", Value: bson.D{
+				{Key: "$year", Value: "$date"},
+			}},
+		}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: nil},
+			{Key: "years", Value: bson.D{
+				{Key: "$addToSet", Value: "$year"},
+			}},
+		}}},
+		{{Key: "$unwind", Value: "$years"}},
+		{{Key: "$sort", Value: bson.D{
+			{Key: "years", Value: 1},
+		}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: nil},
+			{Key: "years", Value: bson.D{
+				{Key: "$push", Value: "$years"},
+			}},
+		}}},
+	}
+
+	cursor, err := coll.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate error: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var result []struct {
+		Years []int `bson:"years"`
+	}
+
+	if err := cursor.All(ctx, &result); err != nil {
+		return nil, fmt.Errorf("cursor decoding error: %w", err)
+	}
+
+	if len(result) == 0 {
+		return &game.ArchiveYearsResponse{Years: []int{}}, nil
+	}
+
+	return &game.ArchiveYearsResponse{Years: result[0].Years}, nil
 }

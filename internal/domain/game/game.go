@@ -93,3 +93,7 @@ type ArchiveResponse struct {
 	Page              int               `json:"page" bson:"page"`
 	PagesTotal        int               `json:"pages_total" bson:"pages_total"`
 }
+
+type ArchiveYearsResponse struct {
+	Years []int `json:"years" bson:"years"`
+}

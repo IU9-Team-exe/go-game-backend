@@ -466,3 +466,38 @@ func (g *GameHandler) HandleGetArchivePaginator(w http.ResponseWriter, r *http.R
 
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
 }
+
+// HandleGetYearsInArchive godoc
+// @Summary Получить массив годов из архива
+// @Description Возвращает отсортированный массив годов (int), доступных в архиве чужих партий.
+// @Tags game
+// @Accept json
+// @Produce json
+// @Success 200 {object} game.ArchiveResponse "Ответ с массивом годов"
+// @Failure 400 {object} httpresponse.ErrorResponse "Ошибка получения годов из архива"
+// @Failure 405 {object} httpresponse.ErrorResponse "Метод не разрешен"
+// @Router /getYearsInArchive [get]
+func (g *GameHandler) HandleGetYearsInArchive(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		g.log.Error("Разрешен только метод GET")
+		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод GET")
+		return
+	}
+
+	userID := g.authHandler.GetUserID(w, r)
+	if userID == "" {
+		g.log.Error("UserID не найден в cookie")
+		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "UserID не найден в cookie")
+		return
+	}
+
+	ctx := r.Context()
+	resp, err := g.gameUC.GetListOfArchiveYears(ctx)
+	if err != nil {
+		g.log.Error("Ошибка получения годов из архива: ", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, fmt.Sprintf("ошибка получения годов из архива: %v", err))
+		return
+	}
+
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+}

@@ -397,6 +397,30 @@ paths:
       summary: Получение информации о пользователе
       tags:
       - user
+  /getYearsInArchive:
+    get:
+      consumes:
+      - application/json
+      description: Возвращает отсортированный массив годов (int), доступных в архиве
+        чужих партий.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Ответ с массивом годов
+          schema:
+            $ref: '#/definitions/team_exe_internal_domain_game.ArchiveResponse'
+        "400":
+          description: Ошибка получения годов из архива
+          schema:
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+        "405":
+          description: Метод не разрешен
+          schema:
+            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+      summary: Получить массив годов из архива
+      tags:
+      - game
   /leave:
     post:
       consumes:
