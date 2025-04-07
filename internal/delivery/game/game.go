@@ -30,6 +30,10 @@ type GameHandler struct {
 	authHandler  *auth.AuthHandler
 }
 
+type FindGameInArchive struct {
+	GameId string `json:"game_id"`
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
@@ -544,4 +548,58 @@ func (g *GameHandler) HandleGetNamesInArchive(w http.ResponseWriter, r *http.Req
 	}
 
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+}
+
+// HandleGetGameFromArchiveById godoc
+// @Summary Получить массив годов из архива
+// @Description Возвращает отсортированный массив годов (int), доступных в архиве чужих партий.
+// @Tags game
+// @Accept json
+// @Produce json
+// @Param page query int false "Номер страницы для пагинации"
+// @Success 200 {object} game.ArchiveNamesResponse "Ответ с массивом годов"
+// @Failure 400 {object} httpresponse.ErrorResponse "Ошибка получения годов из архива"
+// @Failure 405 {object} httpresponse.ErrorResponse "Метод не разрешен"
+// @Router /getGameFromArchiveById [post]
+func (g *GameHandler) HandleGetGameFromArchiveById(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		g.log.Error("Разрешен только метод POST")
+		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод POST")
+		return
+	}
+
+	userID := g.authHandler.GetUserID(w, r)
+	if userID == "" {
+		g.log.Error("UserID не найден в cookie")
+		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "UserID не найден в cookie")
+		return
+	}
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		g.log.Error("Ошибка чтения тела запроса:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Ошибка чтения тела запроса")
+		return
+	}
+	defer r.Body.Close()
+
+	decoder := json.NewDecoder(bytes.NewReader(bodyBytes))
+	decoder.DisallowUnknownFields()
+
+	var findGameReq FindGameInArchive
+	if err = decoder.Decode(&findGameReq); err != nil {
+		g.log.Error("Ошибка декодирования JSON:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Неверный JSON: "+err.Error())
+		return
+	}
+
+	ctx := r.Context()
+	foundGame, err := g.gameUC.GetGameFromArchiveById(ctx, findGameReq.GameId)
+	if err != nil {
+		g.log.Error(err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Ошибка при получении игры: "+err.Error())
+		return
+	}
+
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, foundGame)
 }

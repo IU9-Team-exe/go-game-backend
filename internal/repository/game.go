@@ -593,3 +593,31 @@ func (g *GameRepository) GetArchiveNames(ctx context.Context, pageNum int) (*gam
 
 	return response, nil
 }
+
+func (g *GameRepository) GetGameFromArchiveById(ctx context.Context, gameFromArchiveById string) (*game.GameFromArchive, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	collection := g.mongo.Collection("archive")
+
+	objectID, err := primitive.ObjectIDFromHex(gameFromArchiveById)
+	if err != nil {
+		g.log.Error("Invalid ObjectID:", err)
+		return nil, err
+	}
+
+	filter := bson.M{
+		"_id": objectID,
+	}
+
+	foundGame := &game.GameFromArchive{}
+
+	err = collection.FindOne(ctx, filter).Decode(&foundGame)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return foundGame, nil
+	} else if err != nil {
+		g.log.Error(err)
+		return foundGame, err
+	}
+
+	return foundGame, nil
+}
