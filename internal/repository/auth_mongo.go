@@ -111,3 +111,30 @@ func (m *MongoUserStorage) GetUserByID(ctx context.Context, userID string) (user
 
 	return result, nil
 }
+
+func (m *MongoUserStorage) AddLose(ctx context.Context, userID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	userObjID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return fmt.Errorf("invalid userID format: %w", err)
+	}
+
+	filter := bson.M{"_id": userObjID}
+	collection := m.adapter.Database.Collection("users")
+
+	var result user.User
+	if err = collection.FindOne(ctx, filter).Decode(&result); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return fmt.Errorf("user with id %s not found", userID)
+		}
+		return err
+	}
+	result.Statistic.Losses++
+	update := bson.D{{"$set", bson.D{{"statistic", result.Statistic}}}}
+	_, err = collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return err
+	}
+	return nil
+}

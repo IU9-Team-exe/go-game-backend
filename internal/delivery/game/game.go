@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/websocket"
-	"go.uber.org/zap"
 	"io"
 	"log"
 	"net/http"
@@ -19,6 +17,9 @@ import (
 	repo "team_exe/internal/repository"
 	gameuc "team_exe/internal/usecase/game"
 	"team_exe/internal/utils"
+
+	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
 type GameHandler struct {
@@ -50,7 +51,7 @@ func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *
 	return &GameHandler{
 		cfg:         cfg,
 		log:         log,
-		gameUC:      gameuc.NewGameUseCase(repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database)),
+		gameUC:      gameuc.NewGameUseCase(repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database), authHandler.UsecaseHandler),
 		authHandler: authHandler,
 	}
 }

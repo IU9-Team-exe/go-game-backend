@@ -9,6 +9,7 @@ import (
 	sgf "team_exe/internal/domain/sgf"
 	"team_exe/internal/errors"
 	"team_exe/internal/statuses"
+	"team_exe/internal/usecase/auth"
 	"time"
 )
 
@@ -32,11 +33,12 @@ type GameStore interface {
 }
 
 type GameUseCase struct {
-	store GameStore
+	store       GameStore
+	userUsecase *auth.UserUsecaseHandler
 }
 
-func NewGameUseCase(store GameStore) *GameUseCase {
-	return &GameUseCase{store: store}
+func NewGameUseCase(store GameStore, auth *auth.UserUsecaseHandler) *GameUseCase {
+	return &GameUseCase{store: store, userUsecase: auth}
 }
 
 func (g *GameUseCase) CreateGame(ctx context.Context, newGameRequest game.CreateGameRequest, creatorID string) (err error, gameKeyPublic string, gameKeySecret string) {
@@ -87,13 +89,21 @@ func (g *GameUseCase) LeaveGame(ctx context.Context, gamePublicKey, userID strin
 	if err != nil {
 		return false, err
 	}
+	if (play.PlayerWhite == "" && play.PlayerBlack != "") || (play.PlayerWhite != "" && play.PlayerBlack == "") {
+		// пользователь один, значит просто выходит
+		err = g.store.LeaveGameBySecretKey(ctx, play.GameKeySecret, userID)
+		if err != nil {
+			return false, err
+		}
 
-	err = g.store.LeaveGameBySecretKey(ctx, play.GameKeySecret, userID)
-	if err != nil {
-		return false, err
+		return true, nil
+	} else if play.PlayerWhite != "" && play.PlayerBlack != "" {
+		err := g.userUsecase.AddLose(userID)
+		if err != nil {
+			return false, err
+		}
 	}
-
-	return true, nil
+	return false, nil
 }
 
 func (g *GameUseCase) GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (game.Game, error) {

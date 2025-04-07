@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"go.uber.org/zap"
 	"team_exe/internal/adapters"
 	_ "team_exe/internal/domain/user"
 	errs "team_exe/internal/errors"
@@ -14,10 +13,12 @@ import (
 	"team_exe/internal/repository"
 	authUC "team_exe/internal/usecase/auth"
 	"team_exe/internal/utils"
+
+	"go.uber.org/zap"
 )
 
 type AuthHandler struct {
-	usecaseHandler *authUC.AuthUsecaseHandler
+	UsecaseHandler *authUC.UserUsecaseHandler
 	log            *zap.SugaredLogger
 }
 
@@ -38,7 +39,7 @@ type UserFindRequest struct {
 
 func NewAuthHandler(redis *adapters.AdapterRedis, mongo *adapters.AdapterMongo, log *zap.SugaredLogger) *AuthHandler {
 	return &AuthHandler{
-		usecaseHandler: authUC.NewUserUsecaseHandler(
+		UsecaseHandler: authUC.NewUserUsecaseHandler(
 			repository.NewMongoUserStorage(mongo),
 			repository.NewSessionRedisStorage(redis.GetClient()),
 		),
@@ -80,7 +81,7 @@ func (a *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID, err := a.usecaseHandler.RegisterUser(registerData.Username, registerData.Email, registerData.Password)
+	sessionID, err := a.UsecaseHandler.RegisterUser(registerData.Username, registerData.Email, registerData.Password)
 	if err != nil {
 		if errors.Is(err, errs.ErrUserExists) {
 			a.log.Errorf("Register: user already exists: %s", registerData.Username)
@@ -139,7 +140,7 @@ func (a *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID, err := a.usecaseHandler.LoginUser(loginData.Username, loginData.Password)
+	sessionID, err := a.UsecaseHandler.LoginUser(loginData.Username, loginData.Password)
 	if err != nil {
 		switch {
 		case errors.Is(err, errs.ErrUserNotFound):
@@ -200,7 +201,7 @@ func (a *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := a.usecaseHandler.LogoutUser(sessionCookie.Value); err != nil {
+	if err := a.UsecaseHandler.LogoutUser(sessionCookie.Value); err != nil {
 		a.log.Errorf("Logout: failed to logout sessionID=%s: %v", sessionCookie.Value, err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
 			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
@@ -227,7 +228,7 @@ func (a *AuthHandler) GetUserID(w http.ResponseWriter, r *http.Request) string {
 		return ""
 	}
 
-	userID, err := a.usecaseHandler.GetUserIdFromSession(sessionCookie.Value)
+	userID, err := a.UsecaseHandler.GetUserIdFromSession(sessionCookie.Value)
 	if err != nil {
 		if errors.Is(err, errs.ErrSessionNotFound) {
 			a.log.Warn("GetUserID: session not found or expired")
@@ -272,7 +273,7 @@ func (a *AuthHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	if !a.usecaseHandler.CheckAuthorized(ctx, sessionCookie.Value) {
+	if !a.UsecaseHandler.CheckAuthorized(ctx, sessionCookie.Value) {
 		a.log.Warn("GetUserByID: unauthorized access attempt")
 		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "User is not authorized")
 		return
@@ -285,7 +286,7 @@ func (a *AuthHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := a.usecaseHandler.GetUserByUserId(ctx, req.UserID)
+	user, err := a.UsecaseHandler.GetUserByUserId(ctx, req.UserID)
 	if err != nil {
 		a.log.Errorf("GetUserByID: error retrieving user by ID %s: %v", req.UserID, err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
