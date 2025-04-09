@@ -103,7 +103,7 @@ func (g *GameUseCase) LeaveGame(ctx context.Context, gamePublicKey, userID strin
 			return false, err
 		}
 	}
-	return false, nil
+	return true, nil
 }
 
 func (g *GameUseCase) GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (game.Game, error) {
