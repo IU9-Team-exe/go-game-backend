@@ -99,7 +99,7 @@ func (a *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Name:     "sessionID",
 		Value:    sessionID,
 		Expires:  time.Now().Add(10 * time.Hour),
-		Secure:   true,
+		Secure:   false,
 		HttpOnly: true,
 	})
 
@@ -165,7 +165,7 @@ func (a *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Name:     "sessionID",
 		Value:    sessionID,
 		Expires:  time.Now().Add(10 * time.Hour),
-		Secure:   true,
+		Secure:   false, // TODO
 		HttpOnly: true,
 	})
 
