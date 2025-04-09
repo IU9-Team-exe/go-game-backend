@@ -102,6 +102,10 @@ func (g *GameUseCase) LeaveGame(ctx context.Context, gamePublicKey, userID strin
 		if err != nil {
 			return false, err
 		}
+		err = g.store.LeaveGameBySecretKey(ctx, play.GameKeySecret, userID)
+		if err != nil {
+			return false, err
+		}
 	}
 	return true, nil
 }
