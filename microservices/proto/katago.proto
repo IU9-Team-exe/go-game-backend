@@ -1,0 +1,35 @@
+syntax = "proto3";
+package katago;
+
+option go_package = "./;katago";
+
+message BotResponse {
+  string bot_move = 1;
+  Diagnostics diagnostics = 2;
+  string request_id = 3;
+}
+
+message Diagnostics {
+  repeated MovePSV best_ten = 1;
+  string bot_move = 2;
+  double score = 3;
+  double win_prob = 4;
+}
+
+message MovePSV {
+  string move = 1;
+  int32 psv = 2;
+}
+
+message Move {
+  string color = 1;
+  string coordinates = 2;
+}
+
+message Moves {
+    repeated Move moves= 1;
+}
+
+service KatagoService{
+  rpc GenerateMove(Moves) returns (BotResponse);
+}

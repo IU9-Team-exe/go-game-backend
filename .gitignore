@@ -9,7 +9,9 @@ bin
 *.dll
 *.so
 *.dylib
-
+.tar
+.yml
+.pdf
 # Test binary, built with `go test -c`
 *.test
 
@@ -25,3 +27,4 @@ go.work.sum
 
 # env file
 .env
+.MD
