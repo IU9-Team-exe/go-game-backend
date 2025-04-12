@@ -27,6 +27,7 @@ type Game struct {
 
 // @name GameFromArchive
 type GameFromArchive struct {
+	GameId      string    `json:"game_id" bson:"_id"`
 	BlackPlayer string    `bson:"black_player"`
 	WhitePlayer string    `bson:"white_player"`
 	Date        time.Time `bson:"date"`

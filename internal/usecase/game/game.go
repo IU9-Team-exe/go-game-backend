@@ -303,7 +303,6 @@ func (g *GameUseCase) GetListOfArchiveYears(ctx context.Context) (*game.ArchiveY
 func (g *GameUseCase) GetListOfArchiveNames(ctx context.Context, pageNum int) (*game.ArchiveNamesResponse, error) {
 	resp, err := g.store.GetArchiveNames(ctx, pageNum)
 	if err == nil {
-		//resp.Years = resp.Years[2 : len(resp.Years)-2]
 	}
 	return resp, err
 }

@@ -22,6 +22,7 @@ import (
 	authDelivery "team_exe/internal/delivery/auth"
 	gameDelivery "team_exe/internal/delivery/game"
 	katagoDelivery "team_exe/internal/delivery/katago"
+	taskDelivery "team_exe/internal/delivery/tasks"
 	ownMiddleware "team_exe/internal/middleware"
 	katagoProto "team_exe/microservices/proto"
 )
@@ -30,6 +31,7 @@ type mainDeliveryHandler struct {
 	auth   *authDelivery.AuthHandler
 	katago *katagoDelivery.KatagoHandler
 	game   *gameDelivery.GameHandler
+	task   *taskDelivery.TaskHandler
 }
 
 type dataBaseAdapters struct {
@@ -108,6 +110,8 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Get("/getYearsInArchive", h.game.HandleGetYearsInArchive)
 	r.Get("/getNamesInArchive", h.game.HandleGetNamesInArchive)
 	r.Post("/getGameFromArchiveById", h.game.HandleGetGameFromArchiveById)
+	r.Get("/storeTasksToMongoByPath", h.task.HandleStoreInMongo)
+	r.Get("/getAvailableGamesForUser", h.task.HandleGetAvailableGamesForUser)
 
 	r.Get("/swagger/*", httpSwagger.WrapHandler)
 }
@@ -142,11 +146,13 @@ func initializeDeliveryHandlers(
 
 	authDeliveryHandler := authDelivery.NewAuthHandler(databaseAdapters.redisAdapter, databaseAdapters.mongoAdapter, log)
 	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter, authDeliveryHandler)
+	taskDeliveryHandler := taskDelivery.NewTaskHandler(log, &cfg, databaseAdapters.mongoAdapter)
 
 	return &mainDeliveryHandler{
 		auth:   authDeliveryHandler,
 		katago: katagoDeliveryHandler,
 		game:   gameDeliveryHandler,
+		task:   taskDeliveryHandler,
 	}
 }
 
@@ -156,5 +162,5 @@ func handleShutdown(cancelFunc context.CancelFunc, log *zap.SugaredLogger) {
 	<-sigs
 	log.Info("Received shutdown signal")
 	cancelFunc()
-	time.Sleep(1 * time.Second) // дать время закрыть соединения
+	time.Sleep(1 * time.Second)
 }
