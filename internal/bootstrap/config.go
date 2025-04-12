@@ -15,9 +15,14 @@ type Config struct {
 	PageLimitGames   int    `mapstructure:"PAGE_LIMIT_GAMES"`
 	PageLimitPlayers int    `mapstructure:"PAGE_LIMIT_PLAYERS"`
 	PageLimitTasks   int    `mapstructure:"PAGE_LIMIT_TASKS"`
+	LlmApiKey        string `mapstructure:"LLM_API_KEY"`
+	LlmAgentKey      string `mapstructure:"LLM_AGENT_KEY"`
 }
 
 func Setup(cfgPath string) (*Config, error) {
+	viper.SetDefault("PAGE_LIMIT_GAMES", 20)
+	viper.SetDefault("PAGE_LIMIT_PLAYERS", 30)
+	viper.SetDefault("PAGE_LIMIT_TASKS", 10)
 	viper.SetConfigFile(cfgPath)
 
 	err := viper.ReadInConfig()

@@ -51,13 +51,15 @@ type GameStore interface {
 type GameUseCase struct {
 	store         GameStore
 	katagoUsecase *katago.KatagoUseCase
+	llm           LlmStore
 	userUsecase   *auth.UserUsecaseHandler
 }
 
-func NewGameUseCase(store GameStore, authUC *auth.UserUsecaseHandler, kata *katago.KatagoUseCase) *GameUseCase {
+func NewGameUseCase(store GameStore, authUC *auth.UserUsecaseHandler, kata *katago.KatagoUseCase, llm LlmStore) *GameUseCase {
 	return &GameUseCase{
 		store:         store,
 		userUsecase:   authUC,
+		llm:           llm,
 		katagoUsecase: kata,
 	}
 }

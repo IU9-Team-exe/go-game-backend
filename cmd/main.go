@@ -37,6 +37,7 @@ type mainDeliveryHandler struct {
 type dataBaseAdapters struct {
 	redisAdapter *adapters.AdapterRedis
 	mongoAdapter *adapters.AdapterMongo
+	llmAdapter   *adapters.LlmAdapter
 }
 
 // @version 1.0
@@ -111,6 +112,7 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Get("/getAvailableGamesForUser", h.task.HandleGetAvailableGamesForUser)
 	r.Get("/markTaskAsDone", h.task.HandleMarkTaskAsDone)
 	r.Get("/analyseCurrent", h.game.HandleAnalyseGame)
+	r.Post("/getMoveExplanation", h.game.GetMoveExplanation)
 
 	r.Post("/generateMove", h.game.HandleGenerateMove)
 	r.Post("/newBotGame", h.game.HandleNewBotGame)
@@ -128,10 +130,12 @@ func initDatabaseAdapters(ctx context.Context, log *zap.SugaredLogger, cfg boots
 	if err := redisAdapter.Init(ctx); err != nil {
 		log.Fatal("Не удалось инициализировать Redis", zap.Error(err))
 	}
+	llmAdapter := adapters.NewLlmAdapter(cfg.LlmApiKey, cfg.LlmAgentKey)
 
 	log.Info("Адаптеры баз данных инициализированы")
 	return &dataBaseAdapters{
 		redisAdapter: redisAdapter,
+		llmAdapter:   llmAdapter,
 		mongoAdapter: mongoAdapter,
 	}
 }
@@ -146,7 +150,7 @@ func initializeDeliveryHandlers(
 	katagoUC := katagoUseCase.NewKatagoUseCase(katagoRepo)
 
 	authDeliveryHandler := authDelivery.NewAuthHandler(databaseAdapters.redisAdapter, databaseAdapters.mongoAdapter, log)
-	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter, authDeliveryHandler, katagoUC)
+	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter, authDeliveryHandler, katagoUC, databaseAdapters.llmAdapter)
 	taskDeliveryHandler := taskDelivery.NewTaskHandler(log, &cfg, authDeliveryHandler, databaseAdapters.mongoAdapter)
 
 	return &mainDeliveryHandler{
@@ -163,4 +167,5 @@ func handleShutdown(cancelFunc context.CancelFunc, log *zap.SugaredLogger) {
 	log.Info("Received shutdown signal")
 	cancelFunc()
 	time.Sleep(1 * time.Second)
+
 }
