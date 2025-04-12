@@ -18,6 +18,7 @@ type User struct {
 	Statistic      UserStatistic     `json:"statistic" bson:"statistic"`
 	PasswordHash   string            `bson:"password_hash"`
 	PasswordSalt   string            `bson:"password_salt"`
+	DoneTasksIds   []int             `json:"done_tasks_ids" bson:"done_tasks_ids"`
 }
 
 // @name UserStatistic
