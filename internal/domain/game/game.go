@@ -1,8 +1,9 @@
 package game
 
 import (
-	"github.com/gorilla/websocket"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 // @name Game
@@ -129,4 +130,13 @@ type ArchiveNamesResponse struct {
 type NameGameStruct struct {
 	Name         string `json:"name" bson:"name"`
 	CountOfGames int    `json:"count_of_games" bson:"count_of_games"`
+}
+
+type GetMoveExplanationRequest struct {
+	GameID        string `json:"game_archive_id"`
+	MoveSeqNumber int    `json:"move_seq_number"`
+}
+
+type MoveExplanationResponse struct {
+	LlmResponse string `json:"llm_response"`
 }

@@ -34,11 +34,12 @@ type GameStore interface {
 
 type GameUseCase struct {
 	store       GameStore
+	llm         LlmStore
 	userUsecase *auth.UserUsecaseHandler
 }
 
-func NewGameUseCase(store GameStore, auth *auth.UserUsecaseHandler) *GameUseCase {
-	return &GameUseCase{store: store, userUsecase: auth}
+func NewGameUseCase(store GameStore, llm LlmStore, auth *auth.UserUsecaseHandler) *GameUseCase {
+	return &GameUseCase{store: store, userUsecase: auth, llm: llm}
 }
 
 func (g *GameUseCase) CreateGame(ctx context.Context, newGameRequest game.CreateGameRequest, creatorID string) (err error, gameKeyPublic string, gameKeySecret string) {

@@ -2,6 +2,7 @@ package game
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,11 +48,14 @@ var activeGames = make(map[string]*game.Game)
 var activeGamesMu sync.RWMutex
 
 // NewGameHandler создаёт новый обработчик игр.
-func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *adapters.AdapterMongo, redisAdapter *adapters.AdapterRedis, authHandler *auth.AuthHandler) *GameHandler {
+func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *adapters.AdapterMongo, redisAdapter *adapters.AdapterRedis, llmAdapter *adapters.LlmAdapter, authHandler *auth.AuthHandler) *GameHandler {
 	return &GameHandler{
-		cfg:         cfg,
-		log:         log,
-		gameUC:      gameuc.NewGameUseCase(repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database), authHandler.UsecaseHandler),
+		cfg: cfg,
+		log: log,
+		gameUC: gameuc.NewGameUseCase(
+			repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database),
+			repo.NewLlmRepository(llmAdapter),
+			authHandler.UsecaseHandler),
 		authHandler: authHandler,
 	}
 }
@@ -180,7 +184,7 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {string} string "Пользователь успешно покинул игру"
 // @Failure 400 {object} httpresponse.ErrorResponse "Неверный запрос или ошибка JSON"
 // @Failure 405 {string} string "Разрешен только метод POST"
-// @Router /leave [post]
+// @Router /leaveGame [post]
 func (g *GameHandler) LeaveGame(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		g.log.Error("Разрешен только метод POST")
@@ -603,4 +607,41 @@ func (g *GameHandler) HandleGetGameFromArchiveById(w http.ResponseWriter, r *htt
 	}
 
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, foundGame)
+}
+
+// GetMoveExplanation godoc
+// @Summary Возвращает описание хода
+// @Description делает запрос к ллм и возвращает описание хода
+// @Tags game
+// @Accept json
+// @Produce json
+// @Param request body game.GetMoveExplanationRequest true "Запрос пользователя"
+// @Success 200 {object} game.MoveExplanationResponse "Ответ ллм"
+// @Failure 400 {object} httpresponse.ErrorResponse "Неверный запрос"
+// @Failure 405 {string} string "Разрешен только метод POST"
+// @Router /getMoveExplanation [post]
+func (g *GameHandler) GetMoveExplanation(w http.ResponseWriter, r *http.Request) {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		g.log.Error("Ошибка чтения тела запроса:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Ошибка чтения тела запроса")
+		return
+	}
+	defer r.Body.Close()
+
+	decoder := json.NewDecoder(bytes.NewReader(bodyBytes))
+	decoder.DisallowUnknownFields()
+	var gameData game.GetMoveExplanationRequest
+	if err = decoder.Decode(&gameData); err != nil {
+		g.log.Error("Ошибка декодирования JSON:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Неверный JSON: "+err.Error())
+		return
+	}
+	resp, err := g.gameUC.ExplainMove(context.Background(), gameData.GameID, gameData.MoveSeqNumber)
+	if err != nil {
+		g.log.Error(err.Error())
+		httpresponse.WriteInternalErrorResponse(w)
+		return
+	}
+	httpresponse.WriteResponseWithStatus(w, 200, game.MoveExplanationResponse{LlmResponse: resp})
 }
