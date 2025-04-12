@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"os"
 	"path/filepath"
@@ -114,11 +115,11 @@ func (t *TaskStorage) GetTasksWithStatusPaginated(
 ) (*task.TaskResponse, error) {
 
 	var user struct {
-		TasksDone []int `bson:"done_tasks_ids"` // task_number!
+		TasksDone []int `bson:"done_tasks_ids"`
 	}
 
 	err := t.mongo.Database.Collection("users").
-		FindOne(ctx, bson.M{"_id": userIDStr}). // <--- здесь используем строку
+		FindOne(ctx, bson.M{"_id": userIDStr}).
 		Decode(&user)
 
 	if !errors.Is(err, mongo.ErrNoDocuments) {
@@ -137,7 +138,6 @@ func (t *TaskStorage) GetTasksWithStatusPaginated(
 		return nil, err
 	}
 
-	// 3. Отметим done/not_done
 	doneMap := make(map[int]struct{}, len(user.TasksDone))
 	for _, n := range user.TasksDone {
 		doneMap[n] = struct{}{}
@@ -151,24 +151,21 @@ func (t *TaskStorage) GetTasksWithStatusPaginated(
 		}
 	}
 
-	// 4. Сортируем: done → not_done
 	sort.SliceStable(allTasks, func(i, j int) bool {
-		return allTasks[i].TaskStatus < allTasks[j].TaskStatus // "done" < "not_done"
+		return allTasks[i].TaskStatus < allTasks[j].TaskStatus
 	})
 
-	// 5. Определяем, на какой странице начинаются not_done
-	pageWithUnresolved := 0
+	pageWithUnresolved := 1
 	pageLimit := t.cfg.PageLimitTasks
 	for i, task := range allTasks {
 		if task.TaskStatus == "not_done" {
-			pageWithUnresolved = i / pageLimit
+			pageWithUnresolved = (i / pageLimit) + 1
 			break
 		}
 	}
 
-	// 6. Пагинация
 	totalPages := (len(allTasks) + pageLimit - 1) / pageLimit
-	start := pageNum * pageLimit
+	start := (pageNum - 1) * pageLimit
 	end := start + pageLimit
 	if start > len(allTasks) {
 		start = len(allTasks)
@@ -177,11 +174,43 @@ func (t *TaskStorage) GetTasksWithStatusPaginated(
 		end = len(allTasks)
 	}
 
-	// 7. Ответ
 	return &task.TaskResponse{
 		PageNum:            pageNum,
 		TotalPages:         totalPages,
 		PageWithUnresolved: pageWithUnresolved,
 		Tasks:              allTasks[start:end],
 	}, nil
+}
+func (t *TaskStorage) TaskIsDone(ctx context.Context, taskUniqNumber int, userID string) (bool, error) {
+	collection := t.mongo.Database.Collection("users")
+
+	oid, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return false, fmt.Errorf("invalid userID: %w", err)
+	}
+
+	filter := bson.M{
+		"_id":            oid,
+		"done_tasks_ids": taskUniqNumber,
+	}
+
+	var result bson.M
+	err = collection.FindOne(ctx, filter).Decode(&result)
+	if err == nil {
+		return true, nil
+	}
+	if err != mongo.ErrNoDocuments {
+		return false, err
+	}
+
+	update := bson.M{
+		"$addToSet": bson.M{"done_tasks_ids": taskUniqNumber},
+	}
+
+	_, err = collection.UpdateByID(ctx, oid, update)
+	if err != nil {
+		return false, fmt.Errorf("ошибка при добавлении задачи: %w", err)
+	}
+
+	return false, nil
 }

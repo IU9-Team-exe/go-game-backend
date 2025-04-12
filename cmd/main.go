@@ -112,6 +112,7 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Post("/getGameFromArchiveById", h.game.HandleGetGameFromArchiveById)
 	r.Get("/storeTasksToMongoByPath", h.task.HandleStoreInMongo)
 	r.Get("/getAvailableGamesForUser", h.task.HandleGetAvailableGamesForUser)
+	r.Get("/markTaskAsDone", h.task.HandleMarkTaskAsDone)
 
 	r.Get("/swagger/*", httpSwagger.WrapHandler)
 }

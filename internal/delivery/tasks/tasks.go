@@ -78,3 +78,32 @@ func (th *TaskHandler) HandleGetAvailableGamesForUser(w http.ResponseWriter, r *
 
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, taskResponse)
 }
+
+func (th *TaskHandler) HandleMarkTaskAsDone(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		th.log.Error("Разрешен только метод GET")
+		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод GET")
+		return
+	}
+
+	userID := r.URL.Query().Get("userID")
+
+	taskID := r.URL.Query().Get("taskID")
+	taskInt, err := strconv.Atoi(taskID)
+	if err != nil {
+		th.log.Error(err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusRequestedRangeNotSatisfiable, err.Error())
+		return
+	}
+
+	ctx := r.Context()
+
+	err = th.taskUC.MarkTaskAsDone(ctx, userID, taskInt)
+	if err != nil {
+		th.log.Error(err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusRequestedRangeNotSatisfiable, err.Error())
+		return
+	}
+
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "ok")
+}
