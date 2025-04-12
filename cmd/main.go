@@ -150,7 +150,6 @@ func initializeDeliveryHandlers(
 	katagoDeliveryHandler := katagoDelivery.NewKatagoHandler(cfg, log, katagoManager)
 
 	authDeliveryHandler := authDelivery.NewAuthHandler(databaseAdapters.redisAdapter, databaseAdapters.mongoAdapter, log)
-	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter, authDeliveryHandler)
 	taskDeliveryHandler := taskDelivery.NewTaskHandler(log, &cfg, databaseAdapters.mongoAdapter)
 	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log,
 		databaseAdapters.mongoAdapter,
