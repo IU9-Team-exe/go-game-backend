@@ -22,6 +22,7 @@ type Game struct {
 	PlayerBlackWS *websocket.Conn `json:"-"`
 	PlayerWhiteWS *websocket.Conn `json:"-"`
 	Komi          float64         `json:"komi" bson:"komi"`
+	Rules         string          `json:"rules" bson:"rules"`
 	Sgf           string          `json:"sgf" bson:"sgf"`
 }
 
@@ -50,17 +51,18 @@ type Result struct {
 
 // @name GameUser
 type GameUser struct {
-	ID     string          `json:"id" bson:"id"`
-	Role   string          `json:"role" bson:"role"`
-	Color  string          `json:"color" bson:"color"`
-	Rating float64         `json:"rating" bson:"rating"`
-	Score  float64         `json:"score" bson:"score"`
-	WS     *websocket.Conn `json:"-"`
+	ID       string          `json:"id" bson:"id"`
+	Username string          `json:"nickname" bson:"nickname"`
+	Role     string          `json:"role" bson:"role"`
+	Color    string          `json:"color" bson:"color"`
+	Rating   float64         `json:"rating" bson:"rating"`
+	Score    float64         `json:"score" bson:"score"`
+	WS       *websocket.Conn `json:"-"`
 }
 
 // @name GameCreateResponse
 type GameCreateResponse struct {
-	UniqueKey string `json:"public_key" bson:"public_key"`
+	PublicKey string `json:"public_key" bson:"public_key"`
 }
 
 // @name GameJoinRequest
@@ -76,8 +78,15 @@ type GameLeaveRequest struct {
 
 // @name GameStateResponse
 type GameStateResponse struct {
-	Move Move   `json:"move"`
-	SGF  string `json:"sgf"`
+	Move     Move       `json:"move"`
+	MoveInfo MoveInfoWS `json:"move_info" bson:"move_info"`
+}
+
+type MoveInfoWS struct {
+	IsMoveCorrect  bool
+	NewSgf         string
+	Error          string
+	IsGameFinished bool
 }
 
 // @name GetGameInfoRequest
@@ -97,6 +106,7 @@ type CreateGameRequest struct {
 	BoardSize      int     `json:"board_size" bson:"board_size"`
 	Komi           float64 `json:"komi" bson:"komi"`
 	IsCreatorBlack bool    `json:"is_creator_black" bson:"is_creator_black"`
+	Rules          string  `json:"rules" bson:"rules"`
 }
 
 // @name ArchiveResponse

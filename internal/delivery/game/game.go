@@ -3,9 +3,9 @@ package game
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -13,9 +13,11 @@ import (
 	"team_exe/internal/bootstrap"
 	"team_exe/internal/delivery/auth"
 	"team_exe/internal/domain/game"
+	myErrors "team_exe/internal/errors"
 	"team_exe/internal/httpresponse"
 	repo "team_exe/internal/repository"
 	gameuc "team_exe/internal/usecase/game"
+	katagoUC "team_exe/internal/usecase/katago"
 	"team_exe/internal/utils"
 
 	"github.com/gorilla/websocket"
@@ -23,35 +25,47 @@ import (
 )
 
 type GameHandler struct {
-	cfg          bootstrap.Config
-	log          *zap.SugaredLogger
-	gameUC       *gameuc.GameUseCase
-	mongoAdapter *adapters.AdapterMongo
-	redisAdapter *adapters.AdapterRedis
-	authHandler  *auth.AuthHandler
+	cfg         bootstrap.Config
+	log         *zap.SugaredLogger
+	gameUC      *gameuc.GameUseCase
+	authHandler *auth.AuthHandler
 }
 
 type FindGameInArchive struct {
 	GameId string `json:"game_id"`
 }
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+type AlreadyInGameResponse struct {
+	Error       string `json:"error"`
+	CurrGameKey string `json:"currGameKey"`
+}
+
+type activeGame struct {
+	Game    game.Game
+	blackWS *websocket.Conn
+	whiteWS *websocket.Conn
+}
+
+var (
+	activeGames   = make(map[string]*activeGame)
+	activeGamesMu sync.RWMutex
+	upgrader      = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+)
+
+type AnalyseGameRequest struct {
+	GamePublicKey string `json:"game_public_key" bson:"game_public_key"`
 }
 
 type JsonOKResponse struct {
 	Text string `json:"text"`
 }
 
-var activeGames = make(map[string]*game.Game)
-var activeGamesMu sync.RWMutex
-
 // NewGameHandler создаёт новый обработчик игр.
-func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *adapters.AdapterMongo, redisAdapter *adapters.AdapterRedis, authHandler *auth.AuthHandler) *GameHandler {
+func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *adapters.AdapterMongo, redisAdapter *adapters.AdapterRedis, authHandler *auth.AuthHandler, katagoUC *katagoUC.KatagoUseCase) *GameHandler {
 	return &GameHandler{
 		cfg:         cfg,
 		log:         log,
-		gameUC:      gameuc.NewGameUseCase(repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database), authHandler.UsecaseHandler),
+		gameUC:      gameuc.NewGameUseCase(repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database), authHandler.UsecaseHandler, katagoUC),
 		authHandler: authHandler,
 	}
 }
@@ -67,33 +81,21 @@ func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *
 // @Failure 400 {object} httpresponse.ErrorResponse "Неверный запрос или ошибка JSON"
 // @Failure 500 {object} httpresponse.ErrorResponse "Внутренняя ошибка сервера"
 // @Router /getGameByPublicKey [post]
-func (g *GameHandler) HandleGetGameByPublicKey(w http.ResponseWriter, r *http.Request) {
-	bodyBytes, err := io.ReadAll(r.Body)
+func (h *GameHandler) HandleGetGameByPublicKey(w http.ResponseWriter, r *http.Request) {
+	var req game.GetGameInfoRequest
+	if err := utils.DecodeJSONRequest(r, &req); err != nil {
+		h.log.Error("DecodeJSONRequest:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	resp, err := h.gameUC.GetGameByPublicKey(r.Context(), req.GamePublicKey)
 	if err != nil {
-		g.log.Error("Ошибка чтения тела запроса:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Ошибка чтения тела запроса")
+		h.log.Error("GetGameByPublicKey:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(bytes.NewReader(bodyBytes))
-	decoder.DisallowUnknownFields()
-
-	var gameData game.GetGameInfoRequest
-	if err = decoder.Decode(&gameData); err != nil {
-		g.log.Error("Ошибка декодирования JSON:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Неверный JSON: "+err.Error())
-		return
-	}
-
-	gameByID, err := g.gameUC.GetGameByPublicKey(r.Context(), gameData.GamePublicKey)
-	if err != nil {
-		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError,
-			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
-		return
-	}
-
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, gameByID)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
 }
 
 // HandleNewGame godoc
@@ -121,7 +123,7 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if newGameRequest.BoardSize == 0 || newGameRequest.Komi == 0 {
+	if newGameRequest.BoardSize == 0 || newGameRequest.Komi == 0 { // TODO если по нулям, то выставляем дефолтные
 		g.log.Error("Запрос на создание игры не содержит размер доски или коми")
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Запрос не содержит размер доски или коми")
 		return
@@ -130,43 +132,35 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 	userID := g.authHandler.GetUserID(w, r)
 	if userID == "" {
 		g.log.Error("UserID не найден в cookie")
+		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
-	g.log.Infof("Новая игра от пользователя с id: %s", userID)
+	//g.log.Infof("Новая игра от пользователя с id: %s", userID)
 
 	ctx := r.Context()
-	isAlreadyInGame, err := g.gameUC.HasUserActiveGamesByUserId(ctx, userID)
+
+	createdPlay, err := g.gameUC.CreateGame(ctx, newGameRequest, userID)
 	if err != nil {
-		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Ошибка проверки активных игр: "+err.Error())
+		if errors.Is(err, myErrors.ErrUserAlreadyInGame) {
+			resp := AlreadyInGameResponse{
+				Error:       "user already in game",
+				CurrGameKey: createdPlay.GameKeyPublic,
+			}
+			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, resp)
+			return
+		}
+		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	if isAlreadyInGame {
-		g.log.Error("Пользователь уже участвует в игре")
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Пользователь уже участвует в игре")
-		return
-	}
-
-	err, gameKeyPublic, gameKeySecret := g.gameUC.CreateGame(ctx, newGameRequest, userID)
-	if err != nil {
-		g.log.Error(err)
-		return
-	}
-
-	newGame, err := g.gameUC.GetGameBySecreteKey(ctx, gameKeySecret)
-	if err != nil {
-		g.log.Error("Не удалось получить игру после создания:", err)
-	} else {
-		activeGamesMu.Lock()
-		activeGames[gameKeySecret] = &newGame
-		activeGamesMu.Unlock()
-	}
+	activeGamesMu.Lock()
+	activeGames[createdPlay.GameKeySecret] = &activeGame{Game: *createdPlay}
+	activeGamesMu.Unlock()
 
 	resp := game.GameCreateResponse{
-		UniqueKey: gameKeyPublic,
+		PublicKey: createdPlay.GameKeyPublic,
 	}
-	g.log.Info("Новая игра создана с ключом: " + gameKeyPublic)
+	g.log.Info("Новая игра создана с ключом: " + createdPlay.GameKeyPublic)
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
 }
 
@@ -228,85 +222,48 @@ func (g *GameHandler) LeaveGame(w http.ResponseWriter, r *http.Request) {
 // @Failure 400 {object} httpresponse.ErrorResponse "Неверный запрос или игра не найдена"
 // @Failure 405 {string} string "Разрешен только метод POST"
 // @Router /JoinGame [post]
-func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
+func (h *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		g.log.Error("Разрешен только метод POST")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод POST")
+		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Only POST allowed")
 		return
 	}
 
-	userID := g.authHandler.GetUserID(w, r)
+	userID := h.authHandler.GetUserID(w, r)
 	if userID == "" {
-		g.log.Error("UserID не найден в cookie")
+		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
-	g.log.Infof("Запрос на присоединение к игре от пользователя с id: %s", userID)
 
-	var gameJoinRequest game.GameJoinRequest
-	if err := utils.DecodeJSONRequest(r, &gameJoinRequest); err != nil {
-		g.log.Error("Ошибка декодирования JSON:", err)
+	var req game.GameJoinRequest
+	if err := utils.DecodeJSONRequest(r, &req); err != nil {
+		h.log.Error("DecodeJSONRequest:", err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if gameJoinRequest.GameKeyPublic == "" || gameJoinRequest.Role == "" {
-		g.log.Error("Запрос на присоединение к игре не содержит публичного ключа или роли")
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Неверный JSON")
-		return
-	}
-
-	ctx := r.Context()
-	isAlreadyInGame, err := g.gameUC.HasUserActiveGamesByUserId(ctx, userID)
+	joinedGame, err := h.gameUC.JoinGame(r.Context(), req.GameKeyPublic, req.Role, userID)
 	if err != nil {
-		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Ошибка проверки активных игр: "+err.Error())
-		return
-	}
-	if isAlreadyInGame {
-		g.log.Error("Пользователь уже участвует в игре")
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Пользователь уже участвует в игре")
-		return
-	}
-
-	play, err := g.gameUC.GetGameByPublicKey(ctx, gameJoinRequest.GameKeyPublic)
-	if err != nil {
-		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Ошибка получения игры: "+err.Error())
-		return
-	}
-
-	if play.GameKeySecret == "" {
-		g.log.Error("Игра не найдена! Id: " + gameJoinRequest.GameKeyPublic)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Игра не найдена! Id: "+gameJoinRequest.GameKeyPublic)
-		return
-	}
-
-	play, err = g.gameUC.JoinGame(ctx, play, userID)
-	if err != nil {
-		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Ошибка при присоединении к игре: "+err.Error())
+		if errors.Is(err, myErrors.ErrUserAlreadyInGame) {
+			resp := AlreadyInGameResponse{
+				Error:       "user already in game",
+				CurrGameKey: joinedGame.GameKeyPublic,
+			}
+			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, resp)
+			return
+		}
+		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	activeGamesMu.Lock()
-	if existingGame, ok := activeGames[play.GameKeySecret]; ok {
-		if play.PlayerBlack == userID {
-			existingGame.PlayerBlack = userID
-		} else if play.PlayerWhite == userID {
-			existingGame.PlayerWhite = userID
-		}
+	if ag, ok := activeGames[joinedGame.GameKeySecret]; ok {
+		ag.Game = *joinedGame
 	} else {
-		retrievedGame, err := g.gameUC.GetGameByPublicKey(ctx, gameJoinRequest.GameKeyPublic)
-		if err == nil {
-			activeGames[play.GameKeySecret] = &retrievedGame
-		}
+		activeGames[joinedGame.GameKeySecret] = &activeGame{Game: *joinedGame}
 	}
 	activeGamesMu.Unlock()
 
-	resp := JsonOKResponse{
-		Text: "Пользователь успешно присоединился",
-	}
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, JsonOKResponse{Text: "Joined"})
 }
 
 // HandleStartGame godoc
@@ -319,94 +276,166 @@ func (g *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} game.GameStateResponse "Обновление состояния игры в реальном времени"
 // @Failure 400 {object} httpresponse.ErrorResponse "Неверный запрос"
 // @Router /startGame [get]
-func (g *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
+func (h *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	gameID := r.URL.Query().Get("game_id")
-	playerID := g.authHandler.GetUserID(w, r)
-	if gameID == "" || playerID == "" {
-		g.log.Error("Отсутствует gameID или playerID")
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Отсутствует gameID или playerID")
+
+	// 1) Авторизация
+	playerID := h.authHandler.GetUserID(w, r)
+	if playerID == "" {
+		h.log.Warn("HandleStartGame: unauthorized access")
+		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
-	g.log.Infof("ID игрока: %s", playerID)
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	// 2) Параметр game_id
+	gameKey := r.URL.Query().Get("game_id")
+	if gameKey == "" {
+		h.log.Warnf("HandleStartGame: missing game_id (player %s)", playerID)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Missing game_id")
+		return
+	}
+
+	// 3) Берём свежую игру и проверяем участника
+	freshGame, err := h.gameUC.GetGameByPublicKey(ctx, gameKey)
 	if err != nil {
-		log.Println("Ошибка при апгрейде до WebSocket:", err)
+		h.log.Errorf("HandleStartGame: GetGameByPublicKey(%s) failed: %v", gameKey, err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if playerID != freshGame.PlayerBlack && playerID != freshGame.PlayerWhite {
+		h.log.Warnf("HandleStartGame: player %s is not in game %s", playerID, gameKey)
+		httpresponse.WriteResponseWithStatus(w, http.StatusForbidden, "Not a player")
 		return
 	}
 
-	retrievedGame, err := g.gameUC.GetGameByPublicKey(ctx, gameID)
-	if err != nil {
-		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
+	// 4) Обновляем activeGames
+	h.log.Infof("HandleStartGame: preparing WS for player %s game %s", playerID, gameKey)
 	activeGamesMu.Lock()
-	ag, ok := activeGames[retrievedGame.GameKeySecret]
+	ag, ok := activeGames[gameKey]
 	if !ok {
-		activeGames[retrievedGame.GameKeySecret] = &retrievedGame
-		ag = &retrievedGame
+		ag = &activeGame{Game: *freshGame}
+		activeGames[gameKey] = ag
+		h.log.Infof("HandleStartGame: created new activeGame entry for %s", gameKey)
+	} else {
+		ag.Game = *freshGame
+		h.log.Infof("HandleStartGame: refreshed activeGame entry for %s", gameKey)
+	}
+
+	// 5) Определяем слот
+	var slotPtr **websocket.Conn
+	if playerID == ag.Game.PlayerBlack {
+		slotPtr = &ag.blackWS
+	} else {
+		slotPtr = &ag.whiteWS
+	}
+	// Закрываем старое WS, если есть
+	if old := *slotPtr; old != nil {
+		h.log.Infof("HandleStartGame: closing old WS for player %s game %s", playerID, gameKey)
+		old.WriteMessage(websocket.TextMessage, []byte("reconnected"))
+		old.Close()
 	}
 	activeGamesMu.Unlock()
 
-	var playerWS **websocket.Conn
-	var opponentWS **websocket.Conn
-	switch playerID {
-	case ag.PlayerBlack:
-		playerWS, opponentWS = &ag.PlayerBlackWS, &ag.PlayerWhiteWS
-	case ag.PlayerWhite:
-		playerWS, opponentWS = &ag.PlayerWhiteWS, &ag.PlayerBlackWS
-	default:
-		g.log.Error("Неизвестный ID игрока:", playerID)
-		fmt.Println(ag)
-		conn.Close()
+	// 6) Апгрейдим HTTP → WebSocket
+	h.log.Infof("HandleStartGame: upgrading to WS for player %s game %s", playerID, gameKey)
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		h.log.Errorf("HandleStartGame: WS upgrade error for player %s game %s: %v", playerID, gameKey, err)
 		return
 	}
+	h.log.Infof("HandleStartGame: WS connection established for player %s game %s", playerID, gameKey)
 
-	if *playerWS != nil {
-		(*playerWS).WriteMessage(websocket.TextMessage, []byte("Вы были отключены, создано новое соединение."))
-		(*playerWS).Close()
-	}
-	*playerWS = conn
-
+	// 7) Дефер очистки
 	defer func() {
-		conn.Close()
+		h.log.Infof("HandleStartGame: cleaning up WS for player %s game %s", playerID, gameKey)
 		activeGamesMu.Lock()
-		if *playerWS == conn {
-			*playerWS = nil
+		if ag2, ok2 := activeGames[gameKey]; ok2 {
+			if ag2.blackWS == conn {
+				ag2.blackWS = nil
+			}
+			if ag2.whiteWS == conn {
+				ag2.whiteWS = nil
+			}
 		}
 		activeGamesMu.Unlock()
+		conn.Close()
 	}()
 
+	// 8) Сохраняем новый conn под защитой мьютекса
+	activeGamesMu.Lock()
+	*slotPtr = conn
+	// Захватим свежего оппонента
+	var opponentWS *websocket.Conn
+	if playerID == ag.Game.PlayerBlack {
+		opponentWS = ag.whiteWS
+	} else {
+		opponentWS = ag.blackWS
+	}
+	activeGamesMu.Unlock()
+	h.log.Infof("HandleStartGame: assigned WS slot for player %s game %s (opponent connected: %v)", playerID, gameKey, opponentWS != nil)
+
+	// 9) Цикл сообщений
 	for {
-		var move game.Move
-		if err = conn.ReadJSON(&move); err != nil {
-			g.log.Error("Ошибка чтения JSON из WebSocket:", err)
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				h.log.Infof("HandleStartGame: client closed WS normally for player %s game %s: %v", playerID, gameKey, err)
+			} else {
+				h.log.Errorf("HandleStartGame: WS read error for player %s game %s: %v", playerID, gameKey, err)
+			}
 			return
 		}
-		g.log.Info("Получен ход:", move)
-		sgfString, err := g.gameUC.AddMoveToGameSgf(ag.GameKeySecret, move)
+
+		var move game.Move
+		if err := json.Unmarshal(msg, &move); err != nil {
+			h.log.Warnf("HandleStartGame: invalid JSON from player %s game %s: %v", playerID, gameKey, err)
+			continue
+		}
+		h.log.Infof("HandleStartGame: received move from %s in game %s: %+v", playerID, gameKey, move)
+
+		moveInfo, err := h.gameUC.AddMoveToGameSgf(ctx, ag.Game.GameKeySecret, move)
 		if err != nil {
-			g.log.Error(err)
+			h.log.Errorf("HandleStartGame: AddMoveToGameSgf error for player %s game %s: %v", playerID, gameKey, err)
 			conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
 			continue
 		}
-		resp := game.GameStateResponse{
-			Move: move,
-			SGF:  sgfString,
+
+		resp := game.GameStateResponse{Move: move, MoveInfo: *moveInfo}
+		h.log.Debugf("HandleStartGame: sending response %+v to opponent in game %s", resp, gameKey)
+
+		activeGamesMu.Lock()
+		var opponentWS *websocket.Conn
+		if playerID == ag.Game.PlayerBlack {
+			opponentWS = ag.whiteWS
+		} else {
+			opponentWS = ag.blackWS
 		}
-		if *opponentWS != nil {
-			if err := (*opponentWS).WriteJSON(resp); err != nil {
-				g.log.Error("Ошибка отправки сообщения оппоненту:", err)
-				(*opponentWS).Close()
+		activeGamesMu.Unlock()
+
+		if opponentWS != nil {
+			if err := opponentWS.WriteJSON(resp); err != nil {
+				h.log.Errorf("HandleStartGame: failed to send to opponent in game %s: %v", gameKey, err)
+				opponentWS.Close()
 				activeGamesMu.Lock()
-				*opponentWS = nil
+				if playerID == ag.Game.PlayerBlack {
+					ag.whiteWS = nil
+				} else {
+					ag.blackWS = nil
+				}
 				activeGamesMu.Unlock()
 			}
 		} else {
-			conn.WriteMessage(websocket.TextMessage, []byte("Оппонент не подключён"))
+			conn.WriteMessage(websocket.TextMessage, []byte("Opponent not connected"))
+		}
+
+		if resp.MoveInfo.IsGameFinished {
+			h.log.Infof("HandleStartGame: game finished for game %s", gameKey)
+			finished := map[string]string{"event": "game_finished"}
+			conn.WriteJSON(finished)
+			if opponentWS != nil {
+				opponentWS.WriteJSON(finished)
+			}
+			return
 		}
 	}
 }
@@ -603,4 +632,43 @@ func (g *GameHandler) HandleGetGameFromArchiveById(w http.ResponseWriter, r *htt
 	}
 
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, foundGame)
+}
+
+func (g *GameHandler) HandleAnalyseOfCurrentGame(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		g.log.Error("Разрешен только метод POST")
+		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод POST")
+		return
+	}
+
+	var analyseReq AnalyseGameRequest
+	if err := utils.DecodeJSONRequest(r, &analyseReq); err != nil {
+		g.log.Error("Ошибка декодирования JSON:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if analyseReq.GamePublicKey == "" { // TODO если по нулям, то выставляем дефолтные
+		g.log.Error("Запрос на анализ игры содержит некорректный публичный ключ игры")
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Запрос на анализ игры содержит некорректный публичный ключ игры")
+		return
+	}
+
+	userID := g.authHandler.GetUserID(w, r)
+	if userID == "" {
+		g.log.Error("UserID не найден в cookie")
+		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	ctx := r.Context()
+
+	analyseResp, err := g.gameUC.AnalyseCurrentGame(ctx, userID, analyseReq.GamePublicKey)
+	if err != nil {
+		g.log.Error(err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err)
+		return
+	}
+
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, analyseResp)
 }

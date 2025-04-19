@@ -24,6 +24,7 @@ bin
 # Go workspace file
 go.work
 go.work.sum
+analysis_output.json
 
 # env file
 .env

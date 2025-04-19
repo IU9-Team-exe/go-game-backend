@@ -14,6 +14,9 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/zap"
 	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
 	"team_exe/internal/bootstrap"
 	"team_exe/internal/domain/game"
 	"team_exe/internal/domain/user"
@@ -90,56 +93,43 @@ func (g *GameRepository) PutGameToMongoDatabase(ctx context.Context, gameData ga
 	return true
 }
 
-func (g *GameRepository) AddPlayer(ctx context.Context, userId string, gameKey string) (game.Game, bool) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	collection := g.mongo.Collection("games")
-
-	filter := bson.M{"game_key": gameKey}
-
-	update := bson.M{}
-
-	userColor := g.CalculateUserColor(ctx, gameKey, userId)
-	if userColor == "white" {
-		update = bson.M{
-			"$set": bson.M{
-				"player_white": userId,
-			},
-		}
-	} else if userColor == "black" {
-		update = bson.M{
-			"$set": bson.M{
-				"player_black": userId,
-			},
-		}
+func (g *GameRepository) AddPlayer(ctx context.Context, updatedGame *game.Game) error {
+	newUser := updatedGame.Users[len(updatedGame.Users)-1]
+	coll := g.mongo.Collection("games")
+	filter := bson.M{"game_key": updatedGame.GameKeySecret}
+	update := bson.M{
+		"$set": bson.M{
+			"player_black": updatedGame.PlayerBlack,
+			"player_white": updatedGame.PlayerWhite,
+			"status":       updatedGame.Status,
+			"started_at":   updatedGame.StartedAt,
+		},
+		"$push": bson.M{
+			"users": newUser,
+		},
 	}
 
-	opts := options.Update().SetUpsert(false)
-
-	res, err := collection.UpdateOne(ctx, filter, update, opts)
+	res, err := coll.UpdateOne(ctx, filter, update)
 	if err != nil {
-		g.log.Errorf("failed to update game to database: %v", err)
-		return game.Game{}, false
+		return err
 	}
-
 	if res.MatchedCount == 0 {
-		g.log.Infof("игра с ключом %s не найдена", gameKey)
+		return mongo.ErrNoDocuments
 	}
-
-	var updatedGame game.Game
-	err = collection.FindOne(ctx, filter).Decode(&updatedGame)
-	if err != nil {
-		g.log.Errorf("ошибка при получении обновлённой игры: %v", err)
-		return game.Game{}, false
-	}
-
-	g.log.Infof("Пользователь %s (%s) добавлен к игре %s", userId, userColor, gameKey)
-
-	return updatedGame, true
+	return nil
 }
 
-func (g *GameRepository) GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (game.Game, error) {
+func (g *GameRepository) DetermineFreeColor(play *game.Game) (string, error) {
+	if play.PlayerBlack == "" {
+		return "black", nil
+	}
+	if play.PlayerWhite == "" {
+		return "white", nil
+	}
+	return "", errors.New("both player slots are already occupied")
+}
+
+func (g *GameRepository) GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (*game.Game, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	collection := g.mongo.Collection("games")
@@ -160,13 +150,13 @@ func (g *GameRepository) GetGameByPublicKey(ctx context.Context, gameKeyPublic s
 
 	err := collection.FindOne(ctx, filter).Decode(&foundGame)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		return foundGame, nil
+		return &foundGame, nil
 	} else if err != nil {
 		g.log.Error(err)
-		return foundGame, err
+		return &foundGame, err
 	}
 
-	return foundGame, nil
+	return &foundGame, nil
 }
 
 func (g *GameRepository) GetUserByID(ctx context.Context, userID string) (user.User, error) {
@@ -292,6 +282,80 @@ func (g *GameRepository) LoadSGFFromRedis(key string) (string, error) {
 	return g.redis.Get(ctx, key).Result()
 }
 
+func (g *GameRepository) ParseSGF(sgfText string) (*game.Game, error) {
+	var result game.Game
+	if m := regexp.MustCompile(`C\[id:([^\]]+)\]`).FindStringSubmatch(sgfText); m != nil {
+		result.GameKeySecret = m[1]
+	}
+
+	result.BoardSize = 19
+	if m := regexp.MustCompile(`SZ\[(\d{1,2})\]`).FindStringSubmatch(sgfText); m != nil {
+		if sz, err := strconv.Atoi(m[1]); err == nil {
+			result.BoardSize = sz
+		}
+	}
+
+	result.Komi = 0.0
+	if m := regexp.MustCompile(`KM\[([0-9]+(?:\.[0-9]+)?)\]`).FindStringSubmatch(sgfText); m != nil {
+		if km, err := strconv.ParseFloat(m[1], 64); err == nil {
+			result.Komi = km
+		}
+	}
+
+	if m := regexp.MustCompile(`PB\[([^\]]+)\]`).FindStringSubmatch(sgfText); m != nil {
+		result.PlayerBlack = m[1]
+	}
+	if m := regexp.MustCompile(`PW\[([^\]]+)\]`).FindStringSubmatch(sgfText); m != nil {
+		result.PlayerWhite = m[1]
+	}
+
+	if m := regexp.MustCompile(`DT\[([^\]]+)\]`).FindStringSubmatch(sgfText); m != nil {
+		if t, err := time.Parse(time.RFC3339, m[1]); err == nil {
+			result.CreatedAt = t
+		}
+	}
+
+	result.Rules = "tromp-taylor"
+	if strings.Contains(sgfText, "RU[Chinese]") {
+		result.Rules = "chinese"
+	} else if strings.Contains(sgfText, "RU[AGA]") {
+		result.Rules = "aga"
+	}
+
+	moveRe := regexp.MustCompile(`;([BW])\[([a-z]{2}|)\]`)
+	for _, m := range moveRe.FindAllStringSubmatch(sgfText, -1) {
+		color := m[1]
+		raw := m[2]
+		var coord string
+		if raw == "" {
+			coord = "pass"
+		} else {
+			coord = sgfToKataCoord(raw, result.BoardSize)
+		}
+		result.Moves = append(result.Moves, game.Move{
+			Color:       color,
+			Coordinates: coord,
+		})
+	}
+
+	return &result, nil
+}
+
+func sgfToKataCoord(sgf string, boardSize int) string {
+	if len(sgf) != 2 {
+		return "pass"
+	}
+	col := sgf[0] - 'a'
+	row := sgf[1] - 'a'
+
+	colChar := rune('A' + col)
+	if colChar >= 'I' {
+		colChar++
+	}
+
+	return fmt.Sprintf("%c%d", colChar, boardSize-int(row))
+}
+
 func (g *GameRepository) GetAllActiveGames() ([]game.Game, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -320,9 +384,10 @@ func (g *GameRepository) GetAllActiveGames() ([]game.Game, error) {
 	return result, nil
 }
 
-func (g *GameRepository) HasUserActiveGameByUserId(ctx context.Context, userID string) (bool, error) {
+func (g *GameRepository) HasUserActiveGameByUserId(ctx context.Context, userID string) (bool, *game.Game, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+
 	collection := g.mongo.Collection("games")
 	filter := bson.M{
 		"$and": []bson.M{
@@ -339,15 +404,17 @@ func (g *GameRepository) HasUserActiveGameByUserId(ctx context.Context, userID s
 			},
 		},
 	}
-	err := collection.FindOne(ctx, filter).Err()
+
+	var foundGame game.Game
+	err := collection.FindOne(ctx, filter).Decode(&foundGame)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		return false, nil
+		return false, nil, nil
 	} else if err != nil {
 		g.log.Error(err)
-		return false, err
+		return false, nil, err
 	}
 
-	return true, nil
+	return true, &foundGame, nil
 }
 
 func (g *GameRepository) GetActiveGameByUserId(ctx context.Context, userID string) (game.Game, error) {
@@ -575,7 +642,7 @@ func (g *GameRepository) GetArchiveNames(ctx context.Context, pageNum int) (*gam
 		total = countResult[0].Total
 	}
 
-	pagesTotal := (total + g.cfg.PageLimitPlayers - 1) / g.cfg.PageLimitPlayers // округление вверх
+	pagesTotal := (total + g.cfg.PageLimitPlayers - 1) / g.cfg.PageLimitPlayers
 
 	response := &game.ArchiveNamesResponse{
 		Names:             make([]game.NameGameStruct, 0, len(rawResult)),
@@ -620,4 +687,25 @@ func (g *GameRepository) GetGameFromArchiveById(ctx context.Context, gameFromArc
 	}
 
 	return foundGame, nil
+}
+
+func (g *GameRepository) CompleteGame(ctx context.Context, secretKey, finalSgf string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	collection := g.mongo.Collection("games")
+	_, err := collection.UpdateOne(
+		ctx,
+		bson.M{"game_key": secretKey},
+		bson.M{"$set": bson.M{
+			"sgf":    finalSgf,
+			"status": statuses.StatusCompleted,
+		}},
+	)
+	if err != nil {
+		g.log.Errorf("failed to mark game completed: %v", err)
+	}
+
+	_ = g.redis.Del(context.Background(), secretKey).Err()
+	return err
 }

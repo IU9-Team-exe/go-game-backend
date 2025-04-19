@@ -24,6 +24,8 @@ import (
 	katagoDelivery "team_exe/internal/delivery/katago"
 	taskDelivery "team_exe/internal/delivery/tasks"
 	ownMiddleware "team_exe/internal/middleware"
+	internalRepository "team_exe/internal/repository"
+	katagoUseCase "team_exe/internal/usecase/katago"
 	katagoProto "team_exe/microservices/proto"
 )
 
@@ -113,6 +115,7 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Get("/storeTasksToMongoByPath", h.task.HandleStoreInMongo)
 	r.Get("/getAvailableGamesForUser", h.task.HandleGetAvailableGamesForUser)
 	r.Get("/markTaskAsDone", h.task.HandleMarkTaskAsDone)
+	r.Post("/analyseCurrent", h.game.HandleAnalyseOfCurrentGame)
 
 	r.Get("/swagger/*", httpSwagger.WrapHandler)
 }
@@ -145,8 +148,11 @@ func initializeDeliveryHandlers(
 	katagoManager := katagoProto.NewKatagoServiceClient(grpcKatago)
 	katagoDeliveryHandler := katagoDelivery.NewKatagoHandler(cfg, log, katagoManager)
 
+	katagoRepo := internalRepository.NewKatagoStorage(&cfg, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter)
+	katagoUC := katagoUseCase.NewKatagoUseCase(katagoRepo)
+
 	authDeliveryHandler := authDelivery.NewAuthHandler(databaseAdapters.redisAdapter, databaseAdapters.mongoAdapter, log)
-	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter, authDeliveryHandler)
+	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter, authDeliveryHandler, katagoUC)
 	taskDeliveryHandler := taskDelivery.NewTaskHandler(log, &cfg, databaseAdapters.mongoAdapter)
 
 	return &mainDeliveryHandler{
