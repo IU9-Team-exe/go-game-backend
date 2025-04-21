@@ -17,7 +17,12 @@ const docTemplate = `{
     "paths": {
         "/JoinGame": {
             "post": {
-                "description": "Позволяет пользователю присоединиться к игре, используя публичный ключ игры и роль. Требуется авторизация через cookie.",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Lets a user join an existing game by public key and role. Requires authentication via cookie.",
                 "consumes": [
                     "application/json"
                 ],
@@ -27,10 +32,10 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Присоединиться к игре",
+                "summary": "Join a game",
                 "parameters": [
                     {
-                        "description": "Запрос на присоединение к игре",
+                        "description": "Join game parameters",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -41,19 +46,25 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Пользователь успешно присоединился к игре",
+                        "description": "User successfully joined",
                         "schema": {
                             "$ref": "#/definitions/game.JsonOKResponse"
                         }
                     },
                     "400": {
-                        "description": "Неверный запрос или игра не найдена",
+                        "description": "Bad request or game not found",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "405": {
-                        "description": "Разрешен только метод POST",
+                        "description": "Method Not Allowed",
                         "schema": {
                             "type": "string"
                         }
@@ -63,7 +74,12 @@ const docTemplate = `{
         },
         "/NewGame": {
             "post": {
-                "description": "Создает новую игру с указанными параметрами (размер доски, коми и роль). Требуется авторизация через cookie.",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Creates a new Go game with the specified board size, komi and creator color. Requires authentication via cookie.",
                 "consumes": [
                     "application/json"
                 ],
@@ -73,10 +89,10 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Создать новую игру",
+                "summary": "Create a new game",
                 "parameters": [
                     {
-                        "description": "Запрос на создание новой игры",
+                        "description": "New game parameters",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -87,19 +103,25 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Игра успешно создана",
+                        "description": "Game successfully created",
                         "schema": {
                             "$ref": "#/definitions/game.GameCreateResponse"
                         }
                     },
                     "400": {
-                        "description": "Неверный запрос",
+                        "description": "Bad request (missing or invalid parameters)",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "405": {
-                        "description": "Разрешен только метод POST",
+                        "description": "Method Not Allowed",
                         "schema": {
                             "type": "string"
                         }
@@ -107,9 +129,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/getArchive": {
-            "get": {
-                "description": "Возвращает архив игр с постраничной разбивкой, с возможностью фильтрации по году или имени игрока. Обязательно необходимо указать хотя бы один из параметров: год (year) или имя (name).",
+        "/analyseCurrent": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Sends current game SGF to KataGo for analysis. Requires authentication.",
                 "consumes": [
                     "application/json"
                 ],
@@ -119,38 +146,101 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Получить архив игр с пагинацией",
+                "summary": "Analyse current game state",
+                "parameters": [
+                    {
+                        "description": "Public key of current game",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/game.AnalyseGameRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "KataGo analysis results",
+                        "schema": {
+                            "$ref": "#/definitions/game.KataGoResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request or analysis error",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/getArchive": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns a page of archived games, filterable by year or player name (at least one required).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "game"
+                ],
+                "summary": "List archived games with pagination",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Фильтр по году (обязателен, если не указан параметр name)",
+                        "description": "Filter by year (required if name not set)",
                         "name": "year",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Фильтр по имени игрока (обязателен, если не указан параметр year)",
+                        "description": "Filter by player name (required if year not set)",
                         "name": "name",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "Номер страницы для пагинации",
+                        "description": "Page number (default 0)",
                         "name": "page",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Ответ с архивом игр с пагинацией",
+                        "description": "Page of archived games",
                         "schema": {
                             "$ref": "#/definitions/game.ArchiveResponse"
                         }
                     },
                     "400": {
-                        "description": "Неверный запрос или ошибка при получении архива",
+                        "description": "Bad request or archive retrieval error",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -220,7 +310,7 @@ const docTemplate = `{
         },
         "/getGameByPublicKey": {
             "post": {
-                "description": "Возвращает подробную информацию об игре по публичному ключу, переданному в теле запроса.",
+                "description": "Returns detailed information about a game given its public key.",
                 "consumes": [
                     "application/json"
                 ],
@@ -230,10 +320,10 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Получить игру по публичному ключу",
+                "summary": "Retrieve game by public key",
                 "parameters": [
                     {
-                        "description": "Запрос с публичным ключом игры",
+                        "description": "Game public key",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -244,19 +334,19 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Успешное получение информации об игре",
+                        "description": "Game information",
                         "schema": {
                             "$ref": "#/definitions/game.GetGameInfoResponse"
                         }
                     },
                     "400": {
-                        "description": "Неверный запрос или ошибка JSON",
+                        "description": "Bad request or invalid JSON",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Внутренняя ошибка сервера",
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
@@ -266,7 +356,12 @@ const docTemplate = `{
         },
         "/getGameFromArchiveById": {
             "post": {
-                "description": "Возвращает отсортированный массив годов (int), доступных в архиве чужих партий.",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns the archived game record for the given archive document ID.",
                 "consumes": [
                     "application/json"
                 ],
@@ -276,32 +371,41 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Получить массив годов из архива",
+                "summary": "Retrieve a single archived game by ID",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Номер страницы для пагинации",
-                        "name": "page",
-                        "in": "query"
+                        "description": "Archive document ID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/game.FindGameInArchive"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Ответ с массивом годов",
+                        "description": "Archived game details",
                         "schema": {
-                            "$ref": "#/definitions/game.ArchiveNamesResponse"
+                            "$ref": "#/definitions/game.GameFromArchive"
                         }
                     },
                     "400": {
-                        "description": "Ошибка получения годов из архива",
+                        "description": "Bad request or invalid JSON",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
-                    "405": {
-                        "description": "Метод не разрешен",
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "type": "string"
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -309,7 +413,12 @@ const docTemplate = `{
         },
         "/getNamesInArchive": {
             "get": {
-                "description": "Возвращает отсортированный массив годов (int), доступных в архиве чужих партий.",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of player names sorted by game count.",
                 "consumes": [
                     "application/json"
                 ],
@@ -319,30 +428,30 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Получить массив годов из архива",
+                "summary": "List most frequent players in archive",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Номер страницы для пагинации",
+                        "description": "Page number (default 1)",
                         "name": "page",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Ответ с массивом годов",
+                        "description": "Page of player names",
                         "schema": {
                             "$ref": "#/definitions/game.ArchiveNamesResponse"
                         }
                     },
                     "400": {
-                        "description": "Ошибка получения годов из архива",
+                        "description": "Error retrieving names",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "405": {
-                        "description": "Метод не разрешен",
+                        "description": "Method Not Allowed",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
@@ -404,7 +513,12 @@ const docTemplate = `{
         },
         "/getYearsInArchive": {
             "get": {
-                "description": "Возвращает отсортированный массив годов (int), доступных в архиве чужих партий.",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns a sorted list of years for which archived games exist.",
                 "consumes": [
                     "application/json"
                 ],
@@ -414,22 +528,22 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Получить массив годов из архива",
+                "summary": "List available archive years",
                 "responses": {
                     "200": {
-                        "description": "Ответ с массивом годов",
+                        "description": "Array of years",
                         "schema": {
                             "$ref": "#/definitions/game.ArchiveYearsResponse"
                         }
                     },
                     "400": {
-                        "description": "Ошибка получения годов из архива",
+                        "description": "Error retrieving years",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "405": {
-                        "description": "Метод не разрешен",
+                        "description": "Method Not Allowed",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
@@ -437,9 +551,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/leave": {
+        "/leaveGame": {
             "post": {
-                "description": "Позволяет пользователю покинуть игру, передав публичный ключ игры. Требуется авторизация через cookie.",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Allows a user to leave a game by its public key. Requires authentication via cookie.",
                 "consumes": [
                     "application/json"
                 ],
@@ -449,10 +568,10 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Покинуть игру",
+                "summary": "Leave a game",
                 "parameters": [
                     {
-                        "description": "Запрос на покидание игры",
+                        "description": "Game public key",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -463,19 +582,25 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Пользователь успешно покинул игру",
+                        "description": "User successfully left the game",
                         "schema": {
                             "type": "string"
                         }
                     },
                     "400": {
-                        "description": "Неверный запрос или ошибка JSON",
+                        "description": "Bad request or invalid JSON",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "405": {
-                        "description": "Разрешен только метод POST",
+                        "description": "Method Not Allowed",
                         "schema": {
                             "type": "string"
                         }
@@ -658,21 +783,23 @@ const docTemplate = `{
         },
         "/startGame": {
             "get": {
-                "description": "Обновляет HTTP-соединение до WebSocket для обмена ходами в режиме реального времени.",
-                "consumes": [
-                    "application/json"
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
                 ],
+                "description": "Upgrades the HTTP connection to WebSocket for live move exchange. Query param ` + "`" + `game_id` + "`" + ` required.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "game"
                 ],
-                "summary": "Запуск игры через WebSocket",
+                "summary": "Start real‑time game via WebSocket",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Идентификатор игры",
+                        "description": "Public key of the game to join via WS",
                         "name": "game_id",
                         "in": "query",
                         "required": true
@@ -680,15 +807,33 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Обновление состояния игры в реальном времени",
+                        "description": "Initial game state or move update",
                         "schema": {
                             "$ref": "#/definitions/game.GameStateResponse"
                         }
                     },
                     "400": {
-                        "description": "Неверный запрос",
+                        "description": "Bad request (missing game_id)",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden (not a player)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found (game not found)",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -773,6 +918,14 @@ const docTemplate = `{
                 }
             }
         },
+        "game.AnalyseGameRequest": {
+            "type": "object",
+            "properties": {
+                "game_public_key": {
+                    "type": "string"
+                }
+            }
+        },
         "game.ArchiveNamesResponse": {
             "type": "object",
             "properties": {
@@ -837,6 +990,14 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "rules": {
+                    "type": "string"
+                }
+            }
+        },
+        "game.FindGameInArchive": {
+            "type": "object",
+            "properties": {
+                "game_id": {
                     "type": "string"
                 }
             }
@@ -1037,6 +1198,44 @@ const docTemplate = `{
                 }
             }
         },
+        "game.KataGoResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "isDuringSearch": {
+                    "type": "boolean"
+                },
+                "moveInfos": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/game.MoveInfo"
+                    }
+                },
+                "ownership": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "policy": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "rootInfo": {
+                    "$ref": "#/definitions/game.RootInfo"
+                },
+                "turnNumber": {
+                    "type": "integer"
+                }
+            }
+        },
         "game.Move": {
             "type": "object",
             "properties": {
@@ -1045,6 +1244,62 @@ const docTemplate = `{
                 },
                 "coordinates": {
                     "type": "string"
+                }
+            }
+        },
+        "game.MoveInfo": {
+            "type": "object",
+            "properties": {
+                "edgeVisits": {
+                    "type": "integer"
+                },
+                "edgeWeight": {
+                    "type": "number"
+                },
+                "lcb": {
+                    "type": "number"
+                },
+                "move": {
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "prior": {
+                    "type": "number"
+                },
+                "pv": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "scoreLead": {
+                    "type": "number"
+                },
+                "scoreMean": {
+                    "type": "number"
+                },
+                "scoreSelfplay": {
+                    "type": "number"
+                },
+                "scoreStdev": {
+                    "type": "number"
+                },
+                "utility": {
+                    "type": "number"
+                },
+                "utilityLcb": {
+                    "type": "number"
+                },
+                "visits": {
+                    "type": "integer"
+                },
+                "weight": {
+                    "type": "number"
+                },
+                "winrate": {
+                    "type": "number"
                 }
             }
         },
@@ -1084,6 +1339,65 @@ const docTemplate = `{
                 },
                 "winColor": {
                     "type": "string"
+                }
+            }
+        },
+        "game.RootInfo": {
+            "type": "object",
+            "properties": {
+                "currentPlayer": {
+                    "type": "string"
+                },
+                "rawLead": {
+                    "type": "number"
+                },
+                "rawNoResultProb": {
+                    "type": "number"
+                },
+                "rawScoreSelfplay": {
+                    "type": "number"
+                },
+                "rawScoreSelfplayStdev": {
+                    "type": "number"
+                },
+                "rawStScoreError": {
+                    "type": "number"
+                },
+                "rawStWrError": {
+                    "type": "number"
+                },
+                "rawVarTimeLeft": {
+                    "type": "number"
+                },
+                "rawWinrate": {
+                    "type": "number"
+                },
+                "scoreLead": {
+                    "type": "number"
+                },
+                "scoreSelfplay": {
+                    "type": "number"
+                },
+                "scoreStdev": {
+                    "type": "number"
+                },
+                "symHash": {
+                    "type": "string"
+                },
+                "thisHash": {
+                    "type": "string"
+                },
+                "utility": {
+                    "type": "number"
+                },
+                "visits": {
+                    "type": "integer"
+                },
+                "weight": {
+                    "type": "number"
+                },
+                "winrate": {
+                    "type": "number"
                 }
             }
         },

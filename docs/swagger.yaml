@@ -21,6 +21,11 @@ definitions:
       user_id:
         type: string
     type: object
+  game.AnalyseGameRequest:
+    properties:
+      game_public_key:
+        type: string
+    type: object
   game.ArchiveNamesResponse:
     properties:
       names:
@@ -63,6 +68,11 @@ definitions:
       komi:
         type: number
       rules:
+        type: string
+    type: object
+  game.FindGameInArchive:
+    properties:
+      game_id:
         type: string
     type: object
   game.Game:
@@ -193,12 +203,74 @@ definitions:
       text:
         type: string
     type: object
+  game.KataGoResponse:
+    properties:
+      error:
+        type: string
+      id:
+        type: string
+      isDuringSearch:
+        type: boolean
+      moveInfos:
+        items:
+          $ref: '#/definitions/game.MoveInfo'
+        type: array
+      ownership:
+        items:
+          type: number
+        type: array
+      policy:
+        items:
+          type: number
+        type: array
+      rootInfo:
+        $ref: '#/definitions/game.RootInfo'
+      turnNumber:
+        type: integer
+    type: object
   game.Move:
     properties:
       color:
         type: string
       coordinates:
         type: string
+    type: object
+  game.MoveInfo:
+    properties:
+      edgeVisits:
+        type: integer
+      edgeWeight:
+        type: number
+      lcb:
+        type: number
+      move:
+        type: string
+      order:
+        type: integer
+      prior:
+        type: number
+      pv:
+        items:
+          type: string
+        type: array
+      scoreLead:
+        type: number
+      scoreMean:
+        type: number
+      scoreSelfplay:
+        type: number
+      scoreStdev:
+        type: number
+      utility:
+        type: number
+      utilityLcb:
+        type: number
+      visits:
+        type: integer
+      weight:
+        type: number
+      winrate:
+        type: number
     type: object
   game.MoveInfoWS:
     properties:
@@ -224,6 +296,45 @@ definitions:
         type: number
       winColor:
         type: string
+    type: object
+  game.RootInfo:
+    properties:
+      currentPlayer:
+        type: string
+      rawLead:
+        type: number
+      rawNoResultProb:
+        type: number
+      rawScoreSelfplay:
+        type: number
+      rawScoreSelfplayStdev:
+        type: number
+      rawStScoreError:
+        type: number
+      rawStWrError:
+        type: number
+      rawVarTimeLeft:
+        type: number
+      rawWinrate:
+        type: number
+      scoreLead:
+        type: number
+      scoreSelfplay:
+        type: number
+      scoreStdev:
+        type: number
+      symHash:
+        type: string
+      thisHash:
+        type: string
+      utility:
+        type: number
+      visits:
+        type: integer
+      weight:
+        type: number
+      winrate:
+        type: number
     type: object
   game.YearGameStruct:
     properties:
@@ -352,10 +463,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Позволяет пользователю присоединиться к игре, используя публичный
-        ключ игры и роль. Требуется авторизация через cookie.
+      description: Lets a user join an existing game by public key and role. Requires
+        authentication via cookie.
       parameters:
-      - description: Запрос на присоединение к игре
+      - description: Join game parameters
         in: body
         name: request
         required: true
@@ -365,28 +476,34 @@ paths:
       - application/json
       responses:
         "200":
-          description: Пользователь успешно присоединился к игре
+          description: User successfully joined
           schema:
             $ref: '#/definitions/game.JsonOKResponse'
         "400":
-          description: Неверный запрос или игра не найдена
+          description: Bad request or game not found
           schema:
             $ref: '#/definitions/httpresponse.ErrorResponse'
-        "405":
-          description: Разрешен только метод POST
+        "401":
+          description: Unauthorized
           schema:
             type: string
-      summary: Присоединиться к игре
+        "405":
+          description: Method Not Allowed
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Join a game
       tags:
       - game
   /NewGame:
     post:
       consumes:
       - application/json
-      description: Создает новую игру с указанными параметрами (размер доски, коми
-        и роль). Требуется авторизация через cookie.
+      description: Creates a new Go game with the specified board size, komi and creator
+        color. Requires authentication via cookie.
       parameters:
-      - description: Запрос на создание новой игры
+      - description: New game parameters
         in: body
         name: request
         required: true
@@ -396,37 +513,78 @@ paths:
       - application/json
       responses:
         "200":
-          description: Игра успешно создана
+          description: Game successfully created
           schema:
             $ref: '#/definitions/game.GameCreateResponse'
         "400":
-          description: Неверный запрос
+          description: Bad request (missing or invalid parameters)
           schema:
             $ref: '#/definitions/httpresponse.ErrorResponse'
-        "405":
-          description: Разрешен только метод POST
+        "401":
+          description: Unauthorized
           schema:
             type: string
-      summary: Создать новую игру
+        "405":
+          description: Method Not Allowed
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new game
+      tags:
+      - game
+  /analyseCurrent:
+    post:
+      consumes:
+      - application/json
+      description: Sends current game SGF to KataGo for analysis. Requires authentication.
+      parameters:
+      - description: Public key of current game
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/game.AnalyseGameRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: KataGo analysis results
+          schema:
+            $ref: '#/definitions/game.KataGoResponse'
+        "400":
+          description: Bad request or analysis error
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+        "405":
+          description: Method Not Allowed
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Analyse current game state
       tags:
       - game
   /getArchive:
     get:
       consumes:
       - application/json
-      description: 'Возвращает архив игр с постраничной разбивкой, с возможностью
-        фильтрации по году или имени игрока. Обязательно необходимо указать хотя бы
-        один из параметров: год (year) или имя (name).'
+      description: Returns a page of archived games, filterable by year or player
+        name (at least one required).
       parameters:
-      - description: Фильтр по году (обязателен, если не указан параметр name)
+      - description: Filter by year (required if name not set)
         in: query
         name: year
         type: integer
-      - description: Фильтр по имени игрока (обязателен, если не указан параметр year)
+      - description: Filter by player name (required if year not set)
         in: query
         name: name
         type: string
-      - description: Номер страницы для пагинации
+      - description: Page number (default 0)
         in: query
         name: page
         type: integer
@@ -434,14 +592,20 @@ paths:
       - application/json
       responses:
         "200":
-          description: Ответ с архивом игр с пагинацией
+          description: Page of archived games
           schema:
             $ref: '#/definitions/game.ArchiveResponse'
         "400":
-          description: Неверный запрос или ошибка при получении архива
+          description: Bad request or archive retrieval error
           schema:
             $ref: '#/definitions/httpresponse.ErrorResponse'
-      summary: Получить архив игр с пагинацией
+        "405":
+          description: Method Not Allowed
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: List archived games with pagination
       tags:
       - game
   /getAvailableGamesForUser:
@@ -490,10 +654,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Возвращает подробную информацию об игре по публичному ключу, переданному
-        в теле запроса.
+      description: Returns detailed information about a game given its public key.
       parameters:
-      - description: Запрос с публичным ключом игры
+      - description: Game public key
         in: body
         name: request
         required: true
@@ -503,57 +666,64 @@ paths:
       - application/json
       responses:
         "200":
-          description: Успешное получение информации об игре
+          description: Game information
           schema:
             $ref: '#/definitions/game.GetGameInfoResponse'
         "400":
-          description: Неверный запрос или ошибка JSON
+          description: Bad request or invalid JSON
           schema:
             $ref: '#/definitions/httpresponse.ErrorResponse'
         "500":
-          description: Внутренняя ошибка сервера
+          description: Internal server error
           schema:
             $ref: '#/definitions/httpresponse.ErrorResponse'
-      summary: Получить игру по публичному ключу
+      summary: Retrieve game by public key
       tags:
       - game
   /getGameFromArchiveById:
     post:
       consumes:
       - application/json
-      description: Возвращает отсортированный массив годов (int), доступных в архиве
-        чужих партий.
+      description: Returns the archived game record for the given archive document
+        ID.
       parameters:
-      - description: Номер страницы для пагинации
-        in: query
-        name: page
-        type: integer
+      - description: Archive document ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/game.FindGameInArchive'
       produces:
       - application/json
       responses:
         "200":
-          description: Ответ с массивом годов
+          description: Archived game details
           schema:
-            $ref: '#/definitions/game.ArchiveNamesResponse'
+            $ref: '#/definitions/game.GameFromArchive'
         "400":
-          description: Ошибка получения годов из архива
+          description: Bad request or invalid JSON
           schema:
             $ref: '#/definitions/httpresponse.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
         "405":
-          description: Метод не разрешен
+          description: Method Not Allowed
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
-      summary: Получить массив годов из архива
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Retrieve a single archived game by ID
       tags:
       - game
   /getNamesInArchive:
     get:
       consumes:
       - application/json
-      description: Возвращает отсортированный массив годов (int), доступных в архиве
-        чужих партий.
+      description: Returns a paginated list of player names sorted by game count.
       parameters:
-      - description: Номер страницы для пагинации
+      - description: Page number (default 1)
         in: query
         name: page
         type: integer
@@ -561,18 +731,20 @@ paths:
       - application/json
       responses:
         "200":
-          description: Ответ с массивом годов
+          description: Page of player names
           schema:
             $ref: '#/definitions/game.ArchiveNamesResponse'
         "400":
-          description: Ошибка получения годов из архива
+          description: Error retrieving names
           schema:
             $ref: '#/definitions/httpresponse.ErrorResponse'
         "405":
-          description: Метод не разрешен
+          description: Method Not Allowed
           schema:
             $ref: '#/definitions/httpresponse.ErrorResponse'
-      summary: Получить массив годов из архива
+      security:
+      - ApiKeyAuth: []
+      summary: List most frequent players in archive
       tags:
       - game
   /getUserById:
@@ -613,34 +785,35 @@ paths:
     get:
       consumes:
       - application/json
-      description: Возвращает отсортированный массив годов (int), доступных в архиве
-        чужих партий.
+      description: Returns a sorted list of years for which archived games exist.
       produces:
       - application/json
       responses:
         "200":
-          description: Ответ с массивом годов
+          description: Array of years
           schema:
             $ref: '#/definitions/game.ArchiveYearsResponse'
         "400":
-          description: Ошибка получения годов из архива
+          description: Error retrieving years
           schema:
             $ref: '#/definitions/httpresponse.ErrorResponse'
         "405":
-          description: Метод не разрешен
+          description: Method Not Allowed
           schema:
             $ref: '#/definitions/httpresponse.ErrorResponse'
-      summary: Получить массив годов из архива
+      security:
+      - ApiKeyAuth: []
+      summary: List available archive years
       tags:
       - game
-  /leave:
+  /leaveGame:
     post:
       consumes:
       - application/json
-      description: Позволяет пользователю покинуть игру, передав публичный ключ игры.
-        Требуется авторизация через cookie.
+      description: Allows a user to leave a game by its public key. Requires authentication
+        via cookie.
       parameters:
-      - description: Запрос на покидание игры
+      - description: Game public key
         in: body
         name: request
         required: true
@@ -650,18 +823,24 @@ paths:
       - application/json
       responses:
         "200":
-          description: Пользователь успешно покинул игру
+          description: User successfully left the game
           schema:
             type: string
         "400":
-          description: Неверный запрос или ошибка JSON
+          description: Bad request or invalid JSON
           schema:
             $ref: '#/definitions/httpresponse.ErrorResponse'
-        "405":
-          description: Разрешен только метод POST
+        "401":
+          description: Unauthorized
           schema:
             type: string
-      summary: Покинуть игру
+        "405":
+          description: Method Not Allowed
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Leave a game
       tags:
       - game
   /login:
@@ -780,12 +959,10 @@ paths:
       - auth
   /startGame:
     get:
-      consumes:
-      - application/json
-      description: Обновляет HTTP-соединение до WebSocket для обмена ходами в режиме
-        реального времени.
+      description: Upgrades the HTTP connection to WebSocket for live move exchange.
+        Query param `game_id` required.
       parameters:
-      - description: Идентификатор игры
+      - description: Public key of the game to join via WS
         in: query
         name: game_id
         required: true
@@ -794,14 +971,28 @@ paths:
       - application/json
       responses:
         "200":
-          description: Обновление состояния игры в реальном времени
+          description: Initial game state or move update
           schema:
             $ref: '#/definitions/game.GameStateResponse'
         "400":
-          description: Неверный запрос
+          description: Bad request (missing game_id)
           schema:
             $ref: '#/definitions/httpresponse.ErrorResponse'
-      summary: Запуск игры через WebSocket
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+        "403":
+          description: Forbidden (not a player)
+          schema:
+            type: string
+        "404":
+          description: Not Found (game not found)
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Start real‑time game via WebSocket
       tags:
       - game
   /storeTasksToMongoByPath:
