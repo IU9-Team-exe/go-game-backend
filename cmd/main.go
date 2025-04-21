@@ -153,7 +153,7 @@ func initializeDeliveryHandlers(
 
 	authDeliveryHandler := authDelivery.NewAuthHandler(databaseAdapters.redisAdapter, databaseAdapters.mongoAdapter, log)
 	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter, authDeliveryHandler, katagoUC)
-	taskDeliveryHandler := taskDelivery.NewTaskHandler(log, &cfg, databaseAdapters.mongoAdapter)
+	taskDeliveryHandler := taskDelivery.NewTaskHandler(log, &cfg, authDeliveryHandler, databaseAdapters.mongoAdapter)
 
 	return &mainDeliveryHandler{
 		auth:   authDeliveryHandler,

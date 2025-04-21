@@ -31,3 +31,5 @@ analysis_output.json
 .MD
 
 .gz
+.tar.gz
+internal/repository/http-client.private.env.json

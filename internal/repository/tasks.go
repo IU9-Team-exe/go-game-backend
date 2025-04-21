@@ -203,6 +203,22 @@ func (t *TaskStorage) TaskIsDone(ctx context.Context, taskUniqNumber int, userID
 		return false, err
 	}
 
+	var userDoc struct {
+		DoneTasks interface{} `bson:"done_tasks_ids"`
+	}
+	err = collection.FindOne(ctx, bson.M{"_id": oid}).Decode(&userDoc)
+	if err != nil && err != mongo.ErrNoDocuments {
+		return false, fmt.Errorf("ошибка при проверке поля done_tasks_ids: %w", err)
+	}
+	if userDoc.DoneTasks == nil {
+		_, err := collection.UpdateByID(ctx, oid, bson.M{
+			"$set": bson.M{"done_tasks_ids": bson.A{}},
+		})
+		if err != nil {
+			return false, fmt.Errorf("не удалось инициализировать done_tasks_ids: %w", err)
+		}
+	}
+
 	update := bson.M{
 		"$addToSet": bson.M{"done_tasks_ids": taskUniqNumber},
 	}
