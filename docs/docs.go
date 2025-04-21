@@ -35,7 +35,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_domain_game.GameJoinRequest"
+                            "$ref": "#/definitions/game.GameJoinRequest"
                         }
                     }
                 ],
@@ -43,13 +43,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Пользователь успешно присоединился к игре",
                         "schema": {
-                            "$ref": "#/definitions/internal_delivery_game.JsonOKResponse"
+                            "$ref": "#/definitions/game.JsonOKResponse"
                         }
                     },
                     "400": {
                         "description": "Неверный запрос или игра не найдена",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "405": {
@@ -81,7 +81,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_domain_game.CreateGameRequest"
+                            "$ref": "#/definitions/game.CreateGameRequest"
                         }
                     }
                 ],
@@ -89,13 +89,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Игра успешно создана",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_domain_game.GameCreateResponse"
+                            "$ref": "#/definitions/game.GameCreateResponse"
                         }
                     },
                     "400": {
                         "description": "Неверный запрос",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "405": {
@@ -144,13 +144,75 @@ const docTemplate = `{
                     "200": {
                         "description": "Ответ с архивом игр с пагинацией",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_domain_game.ArchiveResponse"
+                            "$ref": "#/definitions/game.ArchiveResponse"
                         }
                     },
                     "400": {
                         "description": "Неверный запрос или ошибка при получении архива",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/getAvailableGamesForUser": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of tasks at the specified difficulty level, marking each as done or not_done.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "Get available tasks for a user",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number (1-based)",
+                        "name": "page",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Task difficulty level",
+                        "name": "level",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/task.TaskResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized\"                     // if no valid user cookie",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "416": {
+                        "description": "Requested Range Not Satisfiable\"  // e.g. missing or invalid parameters",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -176,7 +238,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_domain_game.GetGameInfoRequest"
+                            "$ref": "#/definitions/game.GetGameInfoRequest"
                         }
                     }
                 ],
@@ -184,19 +246,62 @@ const docTemplate = `{
                     "200": {
                         "description": "Успешное получение информации об игре",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_domain_game.GetGameInfoResponse"
+                            "$ref": "#/definitions/game.GetGameInfoResponse"
                         }
                     },
                     "400": {
                         "description": "Неверный запрос или ошибка JSON",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Внутренняя ошибка сервера",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/getGameFromArchiveById": {
+            "post": {
+                "description": "Возвращает отсортированный массив годов (int), доступных в архиве чужих партий.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "game"
+                ],
+                "summary": "Получить массив годов из архива",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Номер страницы для пагинации",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Ответ с массивом годов",
+                        "schema": {
+                            "$ref": "#/definitions/game.ArchiveNamesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Ошибка получения годов из архива",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Метод не разрешен",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     }
                 }
@@ -227,19 +332,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Ответ с массивом годов",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_domain_game.ArchiveNamesResponse"
+                            "$ref": "#/definitions/game.ArchiveNamesResponse"
                         }
                     },
                     "400": {
                         "description": "Ошибка получения годов из архива",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "405": {
                         "description": "Метод не разрешен",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     }
                 }
@@ -265,7 +370,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_delivery_auth.UserFindRequest"
+                            "$ref": "#/definitions/auth.UserFindRequest"
                         }
                     }
                 ],
@@ -273,19 +378,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_domain_user.User"
+                            "$ref": "#/definitions/user.User"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "405": {
@@ -314,19 +419,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Ответ с массивом годов",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_domain_game.ArchiveYearsResponse"
+                            "$ref": "#/definitions/game.ArchiveYearsResponse"
                         }
                     },
                     "400": {
                         "description": "Ошибка получения годов из архива",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "405": {
                         "description": "Метод не разрешен",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     }
                 }
@@ -352,7 +457,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_domain_game.GameLeaveRequest"
+                            "$ref": "#/definitions/game.GameLeaveRequest"
                         }
                     }
                 ],
@@ -366,7 +471,7 @@ const docTemplate = `{
                     "400": {
                         "description": "Неверный запрос или ошибка JSON",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "405": {
@@ -398,7 +503,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_delivery_auth.LoginRequest"
+                            "$ref": "#/definitions/auth.LoginRequest"
                         }
                     }
                 ],
@@ -412,13 +517,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     }
                 }
@@ -444,7 +549,62 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/markTaskAsDone": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Marks the task with the given ID as completed in the user's record.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "Mark a task as done for the current user",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Unique identifier of the task to mark as done",
+                        "name": "taskID",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ok",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized\"                     // if no valid user cookie",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "416": {
+                        "description": "Requested Range Not Satisfiable\"  // e.g. missing or invalid taskID",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -470,7 +630,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_delivery_auth.RegisterRequest"
+                            "$ref": "#/definitions/auth.RegisterRequest"
                         }
                     }
                 ],
@@ -484,13 +644,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     }
                 }
@@ -522,13 +682,57 @@ const docTemplate = `{
                     "200": {
                         "description": "Обновление состояния игры в реальном времени",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_domain_game.GameStateResponse"
+                            "$ref": "#/definitions/game.GameStateResponse"
                         }
                     },
                     "400": {
                         "description": "Неверный запрос",
                         "schema": {
-                            "$ref": "#/definitions/team_exe_internal_httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storeTasksToMongoByPath": {
+            "get": {
+                "description": "Reads all ` + "`" + `.sgf` + "`" + ` files from the given path and saves them into the MongoDB ` + "`" + `tasks` + "`" + ` collection.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "Store tasks in MongoDB",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filesystem path to directory containing SGF files",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successfully stored tasks in MongoDB",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "416": {
+                        "description": "Requested Range Not Satisfiable\"  // e.g. error during file processing or Mongo insert",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -536,7 +740,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "internal_delivery_auth.LoginRequest": {
+        "auth.LoginRequest": {
             "type": "object",
             "properties": {
                 "Password": {
@@ -547,7 +751,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_delivery_auth.RegisterRequest": {
+        "auth.RegisterRequest": {
             "type": "object",
             "properties": {
                 "Email": {
@@ -561,7 +765,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_delivery_auth.UserFindRequest": {
+        "auth.UserFindRequest": {
             "type": "object",
             "properties": {
                 "user_id": {
@@ -569,21 +773,13 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_delivery_game.JsonOKResponse": {
-            "type": "object",
-            "properties": {
-                "text": {
-                    "type": "string"
-                }
-            }
-        },
-        "team_exe_internal_domain_game.ArchiveNamesResponse": {
+        "game.ArchiveNamesResponse": {
             "type": "object",
             "properties": {
                 "names": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/team_exe_internal_domain_game.NameGameStruct"
+                        "$ref": "#/definitions/game.NameGameStruct"
                     }
                 },
                 "page": {
@@ -597,13 +793,13 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.ArchiveResponse": {
+        "game.ArchiveResponse": {
             "type": "object",
             "properties": {
                 "games": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/team_exe_internal_domain_game.GameFromArchive"
+                        "$ref": "#/definitions/game.GameFromArchive"
                     }
                 },
                 "page": {
@@ -617,18 +813,18 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.ArchiveYearsResponse": {
+        "game.ArchiveYearsResponse": {
             "type": "object",
             "properties": {
                 "years": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/team_exe_internal_domain_game.YearGameStruct"
+                        "$ref": "#/definitions/game.YearGameStruct"
                     }
                 }
             }
         },
-        "team_exe_internal_domain_game.CreateGameRequest": {
+        "game.CreateGameRequest": {
             "type": "object",
             "properties": {
                 "board_size": {
@@ -639,10 +835,13 @@ const docTemplate = `{
                 },
                 "komi": {
                     "type": "number"
+                },
+                "rules": {
+                    "type": "string"
                 }
             }
         },
-        "team_exe_internal_domain_game.Game": {
+        "game.Game": {
             "type": "object",
             "properties": {
                 "board_size": {
@@ -667,13 +866,16 @@ const docTemplate = `{
                 "moves": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/team_exe_internal_domain_game.Move"
+                        "$ref": "#/definitions/game.Move"
                     }
                 },
                 "player_black": {
                     "type": "string"
                 },
                 "player_white": {
+                    "type": "string"
+                },
+                "rules": {
                     "type": "string"
                 },
                 "sgf": {
@@ -688,7 +890,7 @@ const docTemplate = `{
                 "users": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/team_exe_internal_domain_game.GameUser"
+                        "$ref": "#/definitions/game.GameUser"
                     }
                 },
                 "who_is_next": {
@@ -697,7 +899,7 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.GameCreateResponse": {
+        "game.GameCreateResponse": {
             "type": "object",
             "properties": {
                 "public_key": {
@@ -705,7 +907,7 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.GameFromArchive": {
+        "game.GameFromArchive": {
             "type": "object",
             "properties": {
                 "blackPlayer": {
@@ -723,17 +925,20 @@ const docTemplate = `{
                 "event": {
                     "type": "string"
                 },
+                "game_id": {
+                    "type": "string"
+                },
                 "komi": {
                     "type": "number"
                 },
                 "moves": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/team_exe_internal_domain_game.Move"
+                        "$ref": "#/definitions/game.Move"
                     }
                 },
                 "result": {
-                    "$ref": "#/definitions/team_exe_internal_domain_game.Result"
+                    "$ref": "#/definitions/game.Result"
                 },
                 "rules": {
                     "type": "string"
@@ -749,7 +954,7 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.GameJoinRequest": {
+        "game.GameJoinRequest": {
             "type": "object",
             "properties": {
                 "public_key": {
@@ -760,7 +965,7 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.GameLeaveRequest": {
+        "game.GameLeaveRequest": {
             "type": "object",
             "properties": {
                 "public_key": {
@@ -768,24 +973,27 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.GameStateResponse": {
+        "game.GameStateResponse": {
             "type": "object",
             "properties": {
                 "move": {
-                    "$ref": "#/definitions/team_exe_internal_domain_game.Move"
+                    "$ref": "#/definitions/game.Move"
                 },
-                "sgf": {
-                    "type": "string"
+                "move_info": {
+                    "$ref": "#/definitions/game.MoveInfoWS"
                 }
             }
         },
-        "team_exe_internal_domain_game.GameUser": {
+        "game.GameUser": {
             "type": "object",
             "properties": {
                 "color": {
                     "type": "string"
                 },
                 "id": {
+                    "type": "string"
+                },
+                "nickname": {
                     "type": "string"
                 },
                 "rating": {
@@ -799,7 +1007,7 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.GetGameInfoRequest": {
+        "game.GetGameInfoRequest": {
             "type": "object",
             "properties": {
                 "game_key": {
@@ -807,11 +1015,11 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.GetGameInfoResponse": {
+        "game.GetGameInfoResponse": {
             "type": "object",
             "properties": {
                 "game": {
-                    "$ref": "#/definitions/team_exe_internal_domain_game.Game"
+                    "$ref": "#/definitions/game.Game"
                 },
                 "player_black_nickname": {
                     "type": "string"
@@ -821,7 +1029,15 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.Move": {
+        "game.JsonOKResponse": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "game.Move": {
             "type": "object",
             "properties": {
                 "color": {
@@ -832,7 +1048,24 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.NameGameStruct": {
+        "game.MoveInfoWS": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "isGameFinished": {
+                    "type": "boolean"
+                },
+                "isMoveCorrect": {
+                    "type": "boolean"
+                },
+                "newSgf": {
+                    "type": "string"
+                }
+            }
+        },
+        "game.NameGameStruct": {
             "type": "object",
             "properties": {
                 "count_of_games": {
@@ -843,7 +1076,7 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.Result": {
+        "game.Result": {
             "type": "object",
             "properties": {
                 "pointDiff": {
@@ -854,7 +1087,7 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_game.YearGameStruct": {
+        "game.YearGameStruct": {
             "type": "object",
             "properties": {
                 "count_of_games": {
@@ -865,7 +1098,60 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_user.User": {
+        "httpresponse.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "ErrorDescription": {
+                    "type": "string"
+                }
+            }
+        },
+        "task.Task": {
+            "type": "object",
+            "properties": {
+                "task_level": {
+                    "description": "Difficulty level (chapter index) of the task\nrequired: true\nexample: 3",
+                    "type": "integer"
+                },
+                "task_number": {
+                    "description": "Unique identifier for this task\nrequired: true\nexample: 42",
+                    "type": "integer"
+                },
+                "task_sgf": {
+                    "description": "Raw SGF content of the problem\nrequired: true\nexample: \"(;SZ[19]... )\"",
+                    "type": "string"
+                },
+                "task_status": {
+                    "description": "Current status, one of \"done\" or \"not_done\"\nrequired: true\nexample: \"not_done\"",
+                    "type": "string"
+                }
+            }
+        },
+        "task.TaskResponse": {
+            "type": "object",
+            "properties": {
+                "page_tmp": {
+                    "description": "Current page number (1-based)\nrequired: true\nexample: 1",
+                    "type": "integer"
+                },
+                "page_with_unresolved": {
+                    "description": "First page that still contains not_done tasks\nrequired: true\nexample: 1",
+                    "type": "integer"
+                },
+                "tasks": {
+                    "description": "Tasks on this page\nrequired: true",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/task.Task"
+                    }
+                },
+                "total_pages": {
+                    "description": "Total number of pages available\nrequired: true\nexample: 5",
+                    "type": "integer"
+                }
+            }
+        },
+        "user.User": {
             "type": "object",
             "properties": {
                 "Username": {
@@ -882,6 +1168,12 @@ const docTemplate = `{
                 },
                 "current_game_key": {
                     "type": "string"
+                },
+                "done_tasks_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 },
                 "email": {
                     "type": "string"
@@ -905,7 +1197,7 @@ const docTemplate = `{
                     }
                 },
                 "statistic": {
-                    "$ref": "#/definitions/team_exe_internal_domain_user.UserStatistic"
+                    "$ref": "#/definitions/user.UserStatistic"
                 },
                 "status": {
                     "type": "string"
@@ -915,7 +1207,7 @@ const docTemplate = `{
                 }
             }
         },
-        "team_exe_internal_domain_user.UserStatistic": {
+        "user.UserStatistic": {
             "type": "object",
             "properties": {
                 "achievements": {
@@ -932,14 +1224,6 @@ const docTemplate = `{
                 },
                 "wins": {
                     "type": "integer"
-                }
-            }
-        },
-        "team_exe_internal_httpresponse.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "ErrorDescription": {
-                    "type": "string"
                 }
             }
         }

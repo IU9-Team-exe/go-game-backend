@@ -1,13 +1,13 @@
 basePath: /api
 definitions:
-  internal_delivery_auth.LoginRequest:
+  auth.LoginRequest:
     properties:
       Password:
         type: string
       Username:
         type: string
     type: object
-  internal_delivery_auth.RegisterRequest:
+  auth.RegisterRequest:
     properties:
       Email:
         type: string
@@ -16,21 +16,16 @@ definitions:
       Username:
         type: string
     type: object
-  internal_delivery_auth.UserFindRequest:
+  auth.UserFindRequest:
     properties:
       user_id:
         type: string
     type: object
-  internal_delivery_game.JsonOKResponse:
-    properties:
-      text:
-        type: string
-    type: object
-  team_exe_internal_domain_game.ArchiveNamesResponse:
+  game.ArchiveNamesResponse:
     properties:
       names:
         items:
-          $ref: '#/definitions/team_exe_internal_domain_game.NameGameStruct'
+          $ref: '#/definitions/game.NameGameStruct'
         type: array
       page:
         type: integer
@@ -39,11 +34,11 @@ definitions:
       total:
         type: integer
     type: object
-  team_exe_internal_domain_game.ArchiveResponse:
+  game.ArchiveResponse:
     properties:
       games:
         items:
-          $ref: '#/definitions/team_exe_internal_domain_game.GameFromArchive'
+          $ref: '#/definitions/game.GameFromArchive'
         type: array
       page:
         type: integer
@@ -52,14 +47,14 @@ definitions:
       total:
         type: integer
     type: object
-  team_exe_internal_domain_game.ArchiveYearsResponse:
+  game.ArchiveYearsResponse:
     properties:
       years:
         items:
-          $ref: '#/definitions/team_exe_internal_domain_game.YearGameStruct'
+          $ref: '#/definitions/game.YearGameStruct'
         type: array
     type: object
-  team_exe_internal_domain_game.CreateGameRequest:
+  game.CreateGameRequest:
     properties:
       board_size:
         type: integer
@@ -67,8 +62,10 @@ definitions:
         type: boolean
       komi:
         type: number
+      rules:
+        type: string
     type: object
-  team_exe_internal_domain_game.Game:
+  game.Game:
     properties:
       board_size:
         type: integer
@@ -85,11 +82,13 @@ definitions:
         type: number
       moves:
         items:
-          $ref: '#/definitions/team_exe_internal_domain_game.Move'
+          $ref: '#/definitions/game.Move'
         type: array
       player_black:
         type: string
       player_white:
+        type: string
+      rules:
         type: string
       sgf:
         type: string
@@ -99,18 +98,18 @@ definitions:
         type: string
       users:
         items:
-          $ref: '#/definitions/team_exe_internal_domain_game.GameUser'
+          $ref: '#/definitions/game.GameUser'
         type: array
       who_is_next:
         description: color
         type: string
     type: object
-  team_exe_internal_domain_game.GameCreateResponse:
+  game.GameCreateResponse:
     properties:
       public_key:
         type: string
     type: object
-  team_exe_internal_domain_game.GameFromArchive:
+  game.GameFromArchive:
     properties:
       blackPlayer:
         type: string
@@ -122,14 +121,16 @@ definitions:
         type: string
       event:
         type: string
+      game_id:
+        type: string
       komi:
         type: number
       moves:
         items:
-          $ref: '#/definitions/team_exe_internal_domain_game.Move'
+          $ref: '#/definitions/game.Move'
         type: array
       result:
-        $ref: '#/definitions/team_exe_internal_domain_game.Result'
+        $ref: '#/definitions/game.Result'
       rules:
         type: string
       sgf:
@@ -139,30 +140,32 @@ definitions:
       whiteRank:
         type: string
     type: object
-  team_exe_internal_domain_game.GameJoinRequest:
+  game.GameJoinRequest:
     properties:
       public_key:
         type: string
       role:
         type: string
     type: object
-  team_exe_internal_domain_game.GameLeaveRequest:
+  game.GameLeaveRequest:
     properties:
       public_key:
         type: string
     type: object
-  team_exe_internal_domain_game.GameStateResponse:
+  game.GameStateResponse:
     properties:
       move:
-        $ref: '#/definitions/team_exe_internal_domain_game.Move'
-      sgf:
-        type: string
+        $ref: '#/definitions/game.Move'
+      move_info:
+        $ref: '#/definitions/game.MoveInfoWS'
     type: object
-  team_exe_internal_domain_game.GameUser:
+  game.GameUser:
     properties:
       color:
         type: string
       id:
+        type: string
+      nickname:
         type: string
       rating:
         type: number
@@ -171,49 +174,125 @@ definitions:
       score:
         type: number
     type: object
-  team_exe_internal_domain_game.GetGameInfoRequest:
+  game.GetGameInfoRequest:
     properties:
       game_key:
         type: string
     type: object
-  team_exe_internal_domain_game.GetGameInfoResponse:
+  game.GetGameInfoResponse:
     properties:
       game:
-        $ref: '#/definitions/team_exe_internal_domain_game.Game'
+        $ref: '#/definitions/game.Game'
       player_black_nickname:
         type: string
       player_white_nickname:
         type: string
     type: object
-  team_exe_internal_domain_game.Move:
+  game.JsonOKResponse:
+    properties:
+      text:
+        type: string
+    type: object
+  game.Move:
     properties:
       color:
         type: string
       coordinates:
         type: string
     type: object
-  team_exe_internal_domain_game.NameGameStruct:
+  game.MoveInfoWS:
+    properties:
+      error:
+        type: string
+      isGameFinished:
+        type: boolean
+      isMoveCorrect:
+        type: boolean
+      newSgf:
+        type: string
+    type: object
+  game.NameGameStruct:
     properties:
       count_of_games:
         type: integer
       name:
         type: string
     type: object
-  team_exe_internal_domain_game.Result:
+  game.Result:
     properties:
       pointDiff:
         type: number
       winColor:
         type: string
     type: object
-  team_exe_internal_domain_game.YearGameStruct:
+  game.YearGameStruct:
     properties:
       count_of_games:
         type: integer
       year:
         type: integer
     type: object
-  team_exe_internal_domain_user.User:
+  httpresponse.ErrorResponse:
+    properties:
+      ErrorDescription:
+        type: string
+    type: object
+  task.Task:
+    properties:
+      task_level:
+        description: |-
+          Difficulty level (chapter index) of the task
+          required: true
+          example: 3
+        type: integer
+      task_number:
+        description: |-
+          Unique identifier for this task
+          required: true
+          example: 42
+        type: integer
+      task_sgf:
+        description: |-
+          Raw SGF content of the problem
+          required: true
+          example: "(;SZ[19]... )"
+        type: string
+      task_status:
+        description: |-
+          Current status, one of "done" or "not_done"
+          required: true
+          example: "not_done"
+        type: string
+    type: object
+  task.TaskResponse:
+    properties:
+      page_tmp:
+        description: |-
+          Current page number (1-based)
+          required: true
+          example: 1
+        type: integer
+      page_with_unresolved:
+        description: |-
+          First page that still contains not_done tasks
+          required: true
+          example: 1
+        type: integer
+      tasks:
+        description: |-
+          Tasks on this page
+          required: true
+        items:
+          $ref: '#/definitions/task.Task'
+        type: array
+      total_pages:
+        description: |-
+          Total number of pages available
+          required: true
+          example: 5
+        type: integer
+    type: object
+  user.User:
     properties:
       Username:
         type: string
@@ -225,6 +304,10 @@ definitions:
         type: string
       current_game_key:
         type: string
+      done_tasks_ids:
+        items:
+          type: integer
+        type: array
       email:
         type: string
       id:
@@ -240,13 +323,13 @@ definitions:
           type: string
         type: object
       statistic:
-        $ref: '#/definitions/team_exe_internal_domain_user.UserStatistic'
+        $ref: '#/definitions/user.UserStatistic'
       status:
         type: string
       updated_at:
         type: string
     type: object
-  team_exe_internal_domain_user.UserStatistic:
+  user.UserStatistic:
     properties:
       achievements:
         items:
@@ -258,11 +341,6 @@ definitions:
         type: integer
       wins:
         type: integer
-    type: object
-  team_exe_internal_httpresponse.ErrorResponse:
-    properties:
-      ErrorDescription:
-        type: string
     type: object
 host: localhost:8080
 info:
@@ -282,18 +360,18 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/team_exe_internal_domain_game.GameJoinRequest'
+          $ref: '#/definitions/game.GameJoinRequest'
       produces:
       - application/json
       responses:
         "200":
           description: Пользователь успешно присоединился к игре
           schema:
-            $ref: '#/definitions/internal_delivery_game.JsonOKResponse'
+            $ref: '#/definitions/game.JsonOKResponse'
         "400":
           description: Неверный запрос или игра не найдена
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
         "405":
           description: Разрешен только метод POST
           schema:
@@ -313,18 +391,18 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/team_exe_internal_domain_game.CreateGameRequest'
+          $ref: '#/definitions/game.CreateGameRequest'
       produces:
       - application/json
       responses:
         "200":
           description: Игра успешно создана
           schema:
-            $ref: '#/definitions/team_exe_internal_domain_game.GameCreateResponse'
+            $ref: '#/definitions/game.GameCreateResponse'
         "400":
           description: Неверный запрос
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
         "405":
           description: Разрешен только метод POST
           schema:
@@ -358,14 +436,56 @@ paths:
         "200":
           description: Ответ с архивом игр с пагинацией
           schema:
-            $ref: '#/definitions/team_exe_internal_domain_game.ArchiveResponse'
+            $ref: '#/definitions/game.ArchiveResponse'
         "400":
           description: Неверный запрос или ошибка при получении архива
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
       summary: Получить архив игр с пагинацией
       tags:
       - game
+  /getAvailableGamesForUser:
+    get:
+      consumes:
+      - application/json
+      description: Returns a paginated list of tasks at the specified difficulty level,
+        marking each as done or not_done.
+      parameters:
+      - description: Page number (1-based)
+        in: query
+        name: page
+        required: true
+        type: integer
+      - description: Task difficulty level
+        in: query
+        name: level
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/task.TaskResponse'
+        "401":
+          description: Unauthorized"                     // if no valid user cookie
+          schema:
+            type: string
+        "405":
+          description: Method Not Allowed
+          schema:
+            type: string
+        "416":
+          description: Requested Range Not Satisfiable"  // e.g. missing or invalid
+            parameters
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Get available tasks for a user
+      tags:
+      - tasks
   /getGameByPublicKey:
     post:
       consumes:
@@ -378,23 +498,52 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/team_exe_internal_domain_game.GetGameInfoRequest'
+          $ref: '#/definitions/game.GetGameInfoRequest'
       produces:
       - application/json
       responses:
         "200":
           description: Успешное получение информации об игре
           schema:
-            $ref: '#/definitions/team_exe_internal_domain_game.GetGameInfoResponse'
+            $ref: '#/definitions/game.GetGameInfoResponse'
         "400":
           description: Неверный запрос или ошибка JSON
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
         "500":
           description: Внутренняя ошибка сервера
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
       summary: Получить игру по публичному ключу
+      tags:
+      - game
+  /getGameFromArchiveById:
+    post:
+      consumes:
+      - application/json
+      description: Возвращает отсортированный массив годов (int), доступных в архиве
+        чужих партий.
+      parameters:
+      - description: Номер страницы для пагинации
+        in: query
+        name: page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Ответ с массивом годов
+          schema:
+            $ref: '#/definitions/game.ArchiveNamesResponse'
+        "400":
+          description: Ошибка получения годов из архива
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "405":
+          description: Метод не разрешен
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+      summary: Получить массив годов из архива
       tags:
       - game
   /getNamesInArchive:
@@ -414,15 +563,15 @@ paths:
         "200":
           description: Ответ с массивом годов
           schema:
-            $ref: '#/definitions/team_exe_internal_domain_game.ArchiveNamesResponse'
+            $ref: '#/definitions/game.ArchiveNamesResponse'
         "400":
           description: Ошибка получения годов из архива
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
         "405":
           description: Метод не разрешен
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
       summary: Получить массив годов из архива
       tags:
       - game
@@ -437,22 +586,22 @@ paths:
         name: user
         required: true
         schema:
-          $ref: '#/definitions/internal_delivery_auth.UserFindRequest'
+          $ref: '#/definitions/auth.UserFindRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/team_exe_internal_domain_user.User'
+            $ref: '#/definitions/user.User'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
         "405":
           description: Only POST method is allowed
           schema:
@@ -472,15 +621,15 @@ paths:
         "200":
           description: Ответ с массивом годов
           schema:
-            $ref: '#/definitions/team_exe_internal_domain_game.ArchiveYearsResponse'
+            $ref: '#/definitions/game.ArchiveYearsResponse'
         "400":
           description: Ошибка получения годов из архива
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
         "405":
           description: Метод не разрешен
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
       summary: Получить массив годов из архива
       tags:
       - game
@@ -496,7 +645,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/team_exe_internal_domain_game.GameLeaveRequest'
+          $ref: '#/definitions/game.GameLeaveRequest'
       produces:
       - application/json
       responses:
@@ -507,7 +656,7 @@ paths:
         "400":
           description: Неверный запрос или ошибка JSON
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
         "405":
           description: Разрешен только метод POST
           schema:
@@ -527,7 +676,7 @@ paths:
         name: login
         required: true
         schema:
-          $ref: '#/definitions/internal_delivery_auth.LoginRequest'
+          $ref: '#/definitions/auth.LoginRequest'
       produces:
       - application/json
       responses:
@@ -538,11 +687,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
       summary: Вход пользователя
       tags:
       - auth
@@ -559,10 +708,46 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
       summary: Выход пользователя
       tags:
       - auth
+  /markTaskAsDone:
+    get:
+      consumes:
+      - application/json
+      description: Marks the task with the given ID as completed in the user's record.
+      parameters:
+      - description: Unique identifier of the task to mark as done
+        in: query
+        name: taskID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ok
+          schema:
+            type: string
+        "401":
+          description: Unauthorized"                     // if no valid user cookie
+          schema:
+            type: string
+        "405":
+          description: Method Not Allowed
+          schema:
+            type: string
+        "416":
+          description: Requested Range Not Satisfiable"  // e.g. missing or invalid
+            taskID
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Mark a task as done for the current user
+      tags:
+      - tasks
   /register:
     post:
       consumes:
@@ -574,7 +759,7 @@ paths:
         name: register
         required: true
         schema:
-          $ref: '#/definitions/internal_delivery_auth.RegisterRequest'
+          $ref: '#/definitions/auth.RegisterRequest'
       produces:
       - application/json
       responses:
@@ -585,11 +770,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
       summary: Регистрация нового пользователя
       tags:
       - auth
@@ -611,14 +796,45 @@ paths:
         "200":
           description: Обновление состояния игры в реальном времени
           schema:
-            $ref: '#/definitions/team_exe_internal_domain_game.GameStateResponse'
+            $ref: '#/definitions/game.GameStateResponse'
         "400":
           description: Неверный запрос
           schema:
-            $ref: '#/definitions/team_exe_internal_httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
       summary: Запуск игры через WebSocket
       tags:
       - game
+  /storeTasksToMongoByPath:
+    get:
+      consumes:
+      - application/json
+      description: Reads all `.sgf` files from the given path and saves them into
+        the MongoDB `tasks` collection.
+      parameters:
+      - description: Filesystem path to directory containing SGF files
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successfully stored tasks in MongoDB
+          schema:
+            type: string
+        "405":
+          description: Method Not Allowed
+          schema:
+            type: string
+        "416":
+          description: Requested Range Not Satisfiable"  // e.g. error during file
+            processing or Mongo insert
+          schema:
+            type: string
+      summary: Store tasks in MongoDB
+      tags:
+      - tasks
 securityDefinitions:
   ApiKeyAuth:
     in: cookie
