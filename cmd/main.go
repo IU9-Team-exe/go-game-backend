@@ -35,9 +35,10 @@ type mainDeliveryHandler struct {
 }
 
 type dataBaseAdapters struct {
-	redisAdapter *adapters.AdapterRedis
-	mongoAdapter *adapters.AdapterMongo
-	llmAdapter   *adapters.LlmAdapter
+	redisAdapter        *adapters.AdapterRedis
+	mongoAdapter        *adapters.AdapterMongo
+	llmAdapter          *adapters.LlmAdapter
+	resultServerAdapter *adapters.ResultServerAdapter
 }
 
 // @version 1.0
@@ -131,11 +132,14 @@ func initDatabaseAdapters(ctx context.Context, log *zap.SugaredLogger, cfg boots
 
 	llmAdapter := adapters.NewLlmAdapter(cfg.LlmApiKey, cfg.LlmAgentKey)
 
+	resultServerAdapter := adapters.NewResultServerAdapter(cfg.ResultServerUrl)
+
 	log.Info("Адаптеры баз данных инициализированы")
 	return &dataBaseAdapters{
-		redisAdapter: redisAdapter,
-		mongoAdapter: mongoAdapter,
-		llmAdapter:   llmAdapter,
+		redisAdapter:        redisAdapter,
+		mongoAdapter:        mongoAdapter,
+		llmAdapter:          llmAdapter,
+		resultServerAdapter: resultServerAdapter,
 	}
 }
 
@@ -155,6 +159,7 @@ func initializeDeliveryHandlers(
 		databaseAdapters.mongoAdapter,
 		databaseAdapters.redisAdapter,
 		databaseAdapters.llmAdapter,
+		databaseAdapters.resultServerAdapter,
 		authDeliveryHandler)
 
 	return &mainDeliveryHandler{

@@ -69,6 +69,9 @@ func (m *MongoUserStorage) CreateUser(username, email, password string) (user.Us
 		AvatarURL:      "",
 		Status:         "",
 		Statistic: user.UserStatistic{
+			Rating:       1500.0,
+			Rd:           350.0,
+			Volatility:   0.06,
 			Wins:         0,
 			Losses:       0,
 			Draws:        0,
@@ -112,7 +115,7 @@ func (m *MongoUserStorage) GetUserByID(ctx context.Context, userID string) (user
 	return result, nil
 }
 
-func (m *MongoUserStorage) AddLose(ctx context.Context, userID string) error {
+func (m *MongoUserStorage) AddResult(ctx context.Context, userID string, isWin bool, oppRating, oppRd, oppVolatility float64) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	userObjID, err := primitive.ObjectIDFromHex(userID)
@@ -130,7 +133,40 @@ func (m *MongoUserStorage) AddLose(ctx context.Context, userID string) error {
 		}
 		return err
 	}
-	result.Statistic.Losses++
+	if isWin {
+		result.Statistic.Wins++
+	} else {
+		result.Statistic.Losses++
+	}
+	result.Statistic.Games = append(result.Statistic.Games, user.GameResultElo{OppRating: oppRating, OppRd: oppRd, OppVolatility: oppVolatility, DidUserWin: isWin})
+	update := bson.D{{"$set", bson.D{{"statistic", result.Statistic}}}}
+	_, err = collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *MongoUserStorage) UpdateRating(ctx context.Context, userID string, rating, rd, volatility float64) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	userObjID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return fmt.Errorf("invalid userID format: %w", err)
+	}
+
+	filter := bson.M{"_id": userObjID}
+	collection := m.adapter.Database.Collection("users")
+	var result user.User
+	if err = collection.FindOne(ctx, filter).Decode(&result); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return fmt.Errorf("user with id %s not found", userID)
+		}
+		return err
+	}
+	result.Statistic.Rating = rating
+	result.Statistic.Rd = rd
+	result.Statistic.Volatility = volatility
 	update := bson.D{{"$set", bson.D{{"statistic", result.Statistic}}}}
 	_, err = collection.UpdateOne(ctx, filter, update)
 	if err != nil {

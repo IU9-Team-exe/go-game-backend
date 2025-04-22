@@ -20,7 +20,8 @@ type UserStorage interface {
 	GetUser(username string) (user.User, bool)
 	GetUserByID(ctx context.Context, userID string) (user.User, error)
 	CreateUser(username, email, password string) (user.User, error)
-	AddLose(ctx context.Context, userID string) error
+	AddResult(ctx context.Context, userID string, isWin bool, oppRating, oppRd, oppVolatility float64) error
+	UpdateRating(ctx context.Context, userID string, rating, rd, volatility float64) error
 }
 
 // SessionStorage описывает операции над сессиями (чтение, запись, удаление).
@@ -114,8 +115,16 @@ func (a *UserUsecaseHandler) GetUserIdFromSession(sessionID string) (string, err
 	return userID, nil
 }
 
-func (a *UserUsecaseHandler) AddLose(userID string) error {
-	err := a.userStorage.AddLose(context.Background(), userID)
+func (a *UserUsecaseHandler) AddResult(userID string, isWin bool, oppRating, oppRd, oppVolatility float64) error {
+	err := a.userStorage.AddResult(context.Background(), userID, isWin, oppRating, oppRd, oppVolatility)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *UserUsecaseHandler) UpdateRating(userID string, rating, rd, volatility float64) error {
+	err := a.userStorage.UpdateRating(context.Background(), userID, rating, rd, volatility)
 	if err != nil {
 		return err
 	}

@@ -48,13 +48,14 @@ var activeGames = make(map[string]*game.Game)
 var activeGamesMu sync.RWMutex
 
 // NewGameHandler создаёт новый обработчик игр.
-func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *adapters.AdapterMongo, redisAdapter *adapters.AdapterRedis, llmAdapter *adapters.LlmAdapter, authHandler *auth.AuthHandler) *GameHandler {
+func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *adapters.AdapterMongo, redisAdapter *adapters.AdapterRedis, llmAdapter *adapters.LlmAdapter, resultServerAdapter *adapters.ResultServerAdapter, authHandler *auth.AuthHandler) *GameHandler {
 	return &GameHandler{
 		cfg: cfg,
 		log: log,
 		gameUC: gameuc.NewGameUseCase(
 			repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database),
 			repo.NewLlmRepository(llmAdapter),
+			repo.NewResultServerRepo(resultServerAdapter),
 			authHandler.UsecaseHandler),
 		authHandler: authHandler,
 	}

@@ -3,10 +3,12 @@ package game
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"team_exe/internal/domain/game"
 	sgf "team_exe/internal/domain/sgf"
+	"team_exe/internal/domain/user"
 	"team_exe/internal/errors"
 	"team_exe/internal/statuses"
 	"team_exe/internal/usecase/auth"
@@ -32,14 +34,19 @@ type GameStore interface {
 	GetGameFromArchiveById(ctx context.Context, gameFromArchiveById string) (*game.GameFromArchive, error)
 }
 
-type GameUseCase struct {
-	store       GameStore
-	llm         LlmStore
-	userUsecase *auth.UserUsecaseHandler
+type ResultServerStore interface {
+	UpdateInfo(oldRating, oldRd, oldVolatility float64, games []user.GameResultElo) (newRating, newRd, newVol float64, err error)
 }
 
-func NewGameUseCase(store GameStore, llm LlmStore, auth *auth.UserUsecaseHandler) *GameUseCase {
-	return &GameUseCase{store: store, userUsecase: auth, llm: llm}
+type GameUseCase struct {
+	store        GameStore
+	resultServer ResultServerStore
+	llm          LlmStore
+	userUsecase  *auth.UserUsecaseHandler
+}
+
+func NewGameUseCase(store GameStore, llm LlmStore, resultServer ResultServerStore, auth *auth.UserUsecaseHandler) *GameUseCase {
+	return &GameUseCase{store: store, userUsecase: auth, llm: llm, resultServer: resultServer}
 }
 
 func (g *GameUseCase) CreateGame(ctx context.Context, newGameRequest game.CreateGameRequest, creatorID string) (err error, gameKeyPublic string, gameKeySecret string) {
@@ -90,6 +97,10 @@ func (g *GameUseCase) LeaveGame(ctx context.Context, gamePublicKey, userID strin
 	if err != nil {
 		return false, err
 	}
+	user, err := g.userUsecase.GetUserByUserId(ctx, userID)
+	if err != nil {
+		return false, err
+	}
 	if (play.PlayerWhite == "" && play.PlayerBlack != "") || (play.PlayerWhite != "" && play.PlayerBlack == "") {
 		// пользователь один, значит просто выходит
 		err = g.store.LeaveGameBySecretKey(ctx, play.GameKeySecret, userID)
@@ -99,11 +110,42 @@ func (g *GameUseCase) LeaveGame(ctx context.Context, gamePublicKey, userID strin
 
 		return true, nil
 	} else if play.PlayerWhite != "" && play.PlayerBlack != "" {
-		err := g.userUsecase.AddLose(userID)
+		var opponentID string
+		if play.PlayerWhite == userID {
+			opponentID = play.PlayerBlack
+		} else {
+			opponentID = play.PlayerWhite
+		}
+		opponent, err := g.userUsecase.GetUserByUserId(ctx, opponentID)
+		if err != nil {
+			slog.Error("error in leavegame", err)
+		} else {
+			err = g.userUsecase.AddResult(opponent.ID, true, user.Statistic.Rating, user.Statistic.Rd, user.Statistic.Volatility)
+			if err != nil {
+				return false, err
+			}
+		}
+		err = g.userUsecase.AddResult(userID, false, opponent.Statistic.Rating, opponent.Statistic.Rd, opponent.Statistic.Volatility)
 		if err != nil {
 			return false, err
 		}
 		err = g.store.LeaveGameBySecretKey(ctx, play.GameKeySecret, userID)
+		if err != nil {
+			return false, err
+		}
+		rating1, rd1, vol1, err := g.resultServer.UpdateInfo(user.Statistic.Rating, user.Statistic.Rd, user.Statistic.Volatility, user.Statistic.Games)
+		if err != nil {
+			return false, err
+		}
+		rating2, rd2, vol2, err := g.resultServer.UpdateInfo(opponent.Statistic.Rating, opponent.Statistic.Rd, opponent.Statistic.Volatility, opponent.Statistic.Games)
+		if err != nil {
+			return false, err
+		}
+		err = g.userUsecase.UpdateRating(userID, rating1, rd1, vol1)
+		if err != nil {
+			return false, err
+		}
+		err = g.userUsecase.UpdateRating(opponentID, rating2, rd2, vol2)
 		if err != nil {
 			return false, err
 		}
