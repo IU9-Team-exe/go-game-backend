@@ -17,6 +17,7 @@ type Config struct {
 	PageLimitTasks   int    `mapstructure:"PAGE_LIMIT_TASKS"`
 	LlmApiKey        string `mapstructure:"LLM_API_KEY"`
 	LlmAgentKey      string `mapstructure:"LLM_AGENT_KEY"`
+	ResultServerUrl  string `mapstructure:"RESULT_SERVER_URL`
 }
 
 func Setup(cfgPath string) (*Config, error) {

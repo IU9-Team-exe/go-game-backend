@@ -35,9 +35,10 @@ type mainDeliveryHandler struct {
 }
 
 type dataBaseAdapters struct {
-	redisAdapter *adapters.AdapterRedis
-	mongoAdapter *adapters.AdapterMongo
-	llmAdapter   *adapters.LlmAdapter
+	redisAdapter        *adapters.AdapterRedis
+	mongoAdapter        *adapters.AdapterMongo
+	llmAdapter          *adapters.LlmAdapter
+	resultServerAdapter *adapters.ResultServerAdapter
 }
 
 // @version 1.0
@@ -131,12 +132,14 @@ func initDatabaseAdapters(ctx context.Context, log *zap.SugaredLogger, cfg boots
 		log.Fatal("Не удалось инициализировать Redis", zap.Error(err))
 	}
 	llmAdapter := adapters.NewLlmAdapter(cfg.LlmApiKey, cfg.LlmAgentKey)
+	resultServerAdapter := adapters.NewResultServerAdapter(cfg.ResultServerUrl)
 
 	log.Info("Адаптеры баз данных инициализированы")
 	return &dataBaseAdapters{
-		redisAdapter: redisAdapter,
-		llmAdapter:   llmAdapter,
-		mongoAdapter: mongoAdapter,
+		redisAdapter:        redisAdapter,
+		llmAdapter:          llmAdapter,
+		mongoAdapter:        mongoAdapter,
+		resultServerAdapter: resultServerAdapter,
 	}
 }
 
@@ -150,7 +153,7 @@ func initializeDeliveryHandlers(
 	katagoUC := katagoUseCase.NewKatagoUseCase(katagoRepo)
 
 	authDeliveryHandler := authDelivery.NewAuthHandler(databaseAdapters.redisAdapter, databaseAdapters.mongoAdapter, log)
-	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter, authDeliveryHandler, katagoUC, databaseAdapters.llmAdapter)
+	gameDeliveryHandler := gameDelivery.NewGameHandler(cfg, log, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter, authDeliveryHandler, katagoUC, databaseAdapters.llmAdapter, databaseAdapters.resultServerAdapter)
 	taskDeliveryHandler := taskDelivery.NewTaskHandler(log, &cfg, authDeliveryHandler, databaseAdapters.mongoAdapter)
 
 	return &mainDeliveryHandler{

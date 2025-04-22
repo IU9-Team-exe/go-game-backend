@@ -24,8 +24,19 @@ type User struct {
 
 // @name UserStatistic
 type UserStatistic struct {
+	Rating       float64
+	Rd           float64
+	Volatility   float64
 	Wins         int      `json:"wins" bson:"wins"`
 	Losses       int      `json:"losses" bson:"losses"`
 	Draws        int      `json:"draws" bson:"draws"`
 	Achievements []string `json:"achievements,omitempty" bson:"achievements,omitempty"`
+	Games        []GameResultElo
+}
+
+type GameResultElo struct {
+	OppRating     float64 `json:"opp_rating"`
+	OppRd         float64 `json:"opp_rd"`
+	OppVolatility float64 `json:"result"`
+	DidUserWin    bool
 }

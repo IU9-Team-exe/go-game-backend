@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -48,19 +49,25 @@ type GameStore interface {
 	DetermineFreeColor(play *game.Game) (string, error)
 }
 
+type ResultServerStore interface {
+	UpdateInfo(oldRating, oldRd, oldVolatility float64, games []user.GameResultElo) (newRating, newRd, newVol float64, err error)
+}
+
 type GameUseCase struct {
 	store         GameStore
 	katagoUsecase *katago.KatagoUseCase
 	llm           LlmStore
+	resultServer  ResultServerStore
 	userUsecase   *auth.UserUsecaseHandler
 }
 
-func NewGameUseCase(store GameStore, authUC *auth.UserUsecaseHandler, kata *katago.KatagoUseCase, llm LlmStore) *GameUseCase {
+func NewGameUseCase(store GameStore, authUC *auth.UserUsecaseHandler, kata *katago.KatagoUseCase, llm LlmStore, resultServer ResultServerStore) *GameUseCase {
 	return &GameUseCase{
 		store:         store,
 		userUsecase:   authUC,
 		llm:           llm,
 		katagoUsecase: kata,
+		resultServer:  resultServer,
 	}
 }
 
@@ -198,20 +205,56 @@ func (g *GameUseCase) LeaveGame(ctx context.Context, userID, key string) (bool, 
 		}
 	}
 
-	// only one real player -> simple leave
-	if (play.PlayerWhite == "" && play.PlayerBlack != "") || (play.PlayerWhite != "" && play.PlayerBlack == "") {
-		if err = g.store.LeaveGameBySecretKey(ctx, secret, userID); err != nil {
-			return false, err
-		}
-		return true, nil
+	userByUserId, err := g.userUsecase.GetUserByUserId(ctx, userID)
+	if err != nil {
+		return false, err
 	}
-
-	// both players existed -> count lose to leaver
-	if play.PlayerWhite != "" && play.PlayerBlack != "" {
-		if err = g.userUsecase.AddLose(userID); err != nil {
+	if (play.PlayerWhite == "" && play.PlayerBlack != "") || (play.PlayerWhite != "" && play.PlayerBlack == "") {
+		// пользователь один, значит просто выходит
+		err = g.store.LeaveGameBySecretKey(ctx, play.GameKeySecret, userID)
+		if err != nil {
 			return false, err
 		}
-		if err = g.store.LeaveGameBySecretKey(ctx, secret, userID); err != nil {
+
+		return true, nil
+	} else if play.PlayerWhite != "" && play.PlayerBlack != "" {
+		var opponentID string
+		if play.PlayerWhite == userID {
+			opponentID = play.PlayerBlack
+		} else {
+			opponentID = play.PlayerWhite
+		}
+		opponent, err := g.userUsecase.GetUserByUserId(ctx, opponentID)
+		if err != nil {
+			slog.Error("error in leavegame", err)
+		} else {
+			err = g.userUsecase.AddResult(opponent.ID, true, userByUserId.Statistic.Rating, userByUserId.Statistic.Rd, userByUserId.Statistic.Volatility)
+			if err != nil {
+				return false, err
+			}
+		}
+		err = g.userUsecase.AddResult(userID, false, opponent.Statistic.Rating, opponent.Statistic.Rd, opponent.Statistic.Volatility)
+		if err != nil {
+			return false, err
+		}
+		err = g.store.LeaveGameBySecretKey(ctx, play.GameKeySecret, userID)
+		if err != nil {
+			return false, err
+		}
+		rating1, rd1, vol1, err := g.resultServer.UpdateInfo(userByUserId.Statistic.Rating, userByUserId.Statistic.Rd, userByUserId.Statistic.Volatility, userByUserId.Statistic.Games)
+		if err != nil {
+			return false, err
+		}
+		rating2, rd2, vol2, err := g.resultServer.UpdateInfo(opponent.Statistic.Rating, opponent.Statistic.Rd, opponent.Statistic.Volatility, opponent.Statistic.Games)
+		if err != nil {
+			return false, err
+		}
+		err = g.userUsecase.UpdateRating(userID, rating1, rd1, vol1)
+		if err != nil {
+			return false, err
+		}
+		err = g.userUsecase.UpdateRating(opponentID, rating2, rd2, vol2)
+		if err != nil {
 			return false, err
 		}
 	}

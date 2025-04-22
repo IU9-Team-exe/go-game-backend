@@ -73,7 +73,7 @@ type JsonOKResponse struct {
 }
 
 // NewGameHandler создаёт новый обработчик игр.
-func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *adapters.AdapterMongo, redisAdapter *adapters.AdapterRedis, authHandler *auth.AuthHandler, katagoUC *katagoUC.KatagoUseCase, llmAdapter *adapters.LlmAdapter) *GameHandler {
+func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *adapters.AdapterMongo, redisAdapter *adapters.AdapterRedis, authHandler *auth.AuthHandler, katagoUC *katagoUC.KatagoUseCase, llmAdapter *adapters.LlmAdapter, resultServerAdapter *adapters.ResultServerAdapter) *GameHandler {
 	return &GameHandler{
 		cfg: cfg,
 		log: log,
@@ -81,7 +81,8 @@ func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *
 			repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database),
 			authHandler.UsecaseHandler,
 			katagoUC,
-			repo.NewLlmRepository(llmAdapter)),
+			repo.NewLlmRepository(llmAdapter),
+			repo.NewResultServerRepo(resultServerAdapter)),
 		authHandler: authHandler,
 	}
 }
