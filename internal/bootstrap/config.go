@@ -14,6 +14,7 @@ type Config struct {
 	IsLocalCors      bool   `mapstructure:"LOCAL_CORS"`
 	PageLimitGames   int    `mapstructure:"PAGE_LIMIT_GAMES"`
 	PageLimitPlayers int    `mapstructure:"PAGE_LIMIT_PLAYERS"`
+	PageLimitTasks   int    `mapstructure:"PAGE_LIMIT_TASKS"`
 }
 
 func Setup(cfgPath string) (*Config, error) {

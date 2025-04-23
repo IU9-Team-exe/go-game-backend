@@ -1,0 +1,43 @@
+FROM nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+# Установка зависимостей
+RUN apt update && apt install -y \
+    git cmake g++ zlib1g-dev libzip-dev \
+    libboost-thread-dev libboost-system-dev \
+    libeigen3-dev wget unzip curl && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN wget https://ftp.debian.org/debian/pool/main/o/openssl/libssl1.1_1.1.1n-0+deb10u3_amd64.deb \
+    && dpkg -i libssl1.1_1.1.1n-0+deb10u3_amd64.deb \
+    && rm libssl1.1_1.1.1n-0+deb10u3_amd64.deb
+
+RUN apt-get update && apt-get install -y libzip4
+
+# Каталог под модель
+RUN mkdir -p /katago/model
+
+
+RUN curl -LO https://go.dev/dl/go1.20.12.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go1.20.12.linux-amd64.tar.gz && \
+    ln -s /usr/local/go/bin/go /usr/bin/go
+
+
+# Копируем KataGo
+COPY katago/katago /katago/katago
+RUN chmod +x /katago/katago
+
+# Копируем модель и конфиг
+COPY katago/kata1-b40c256-s11840935168-d2898845681.bin /katago/model/model.bin
+COPY katago/analysis.cfg /katago/analysis.cfg
+
+# Копируем Go-сервер
+COPY . /app
+WORKDIR /app
+
+
+# Сборка Go-приложения
+RUN go build -o main .
+
+# Запуск
+CMD ["./main"]

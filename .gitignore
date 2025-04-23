@@ -24,7 +24,15 @@ bin
 # Go workspace file
 go.work
 go.work.sum
+analysis_output.json
 
 # env file
 .env
 .MD
+
+.gz
+.tar.gz
+internal/repository/http-client.private.env.json
+mongo_volume_backup.tar.gz
+dump.tar.gz
+dump
