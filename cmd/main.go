@@ -117,6 +117,9 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Get("/markTaskAsDone", h.task.HandleMarkTaskAsDone)
 	r.Post("/analyseCurrent", h.game.HandleAnalyseOfCurrentGame)
 
+	r.Post("/generateMove", h.game.HandleGenerateMove)
+	r.Post("/newBotGame", h.game.HandleNewBotGame)
+
 	r.Get("/swagger/*", httpSwagger.WrapHandler)
 }
 

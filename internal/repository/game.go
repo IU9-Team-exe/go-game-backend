@@ -709,3 +709,26 @@ func (g *GameRepository) CompleteGame(ctx context.Context, secretKey, finalSgf s
 	_ = g.redis.Del(context.Background(), secretKey).Err()
 	return err
 }
+
+func (g *GameRepository) SaveSGFToMongo(ctx context.Context, secretKey, sgfText string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err := g.mongo.Collection("games").
+		UpdateOne(ctx,
+			bson.M{"game_key": secretKey},
+			bson.M{"$set": bson.M{"sgf": sgfText}},
+		)
+	return err
+}
+
+func (g *GameRepository) SaveMovesToMongo(ctx context.Context, secretKey string, moves []game.Move) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	_, err := g.mongo.Collection("games").UpdateOne(
+		ctx,
+		bson.M{"game_key": secretKey},
+		bson.M{"$set": bson.M{"moves": moves}},
+	)
+	return err
+}

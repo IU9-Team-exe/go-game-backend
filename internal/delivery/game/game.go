@@ -13,6 +13,7 @@ import (
 	"team_exe/internal/bootstrap"
 	"team_exe/internal/delivery/auth"
 	"team_exe/internal/domain/game"
+	errs "team_exe/internal/errors"
 	myErrors "team_exe/internal/errors"
 	"team_exe/internal/httpresponse"
 	repo "team_exe/internal/repository"
@@ -56,6 +57,10 @@ type AnalyseGameRequest struct {
 	GamePublicKey string `json:"game_public_key" bson:"game_public_key"`
 }
 
+type GenerateMoveReq struct {
+	GameKeySecret string `json:"game_key_secret" bson:"game_key_secret"`
+}
+
 type JsonOKResponse struct {
 	Text string `json:"text"`
 }
@@ -92,9 +97,17 @@ func (h *GameHandler) HandleGetGameByPublicKey(w http.ResponseWriter, r *http.Re
 	resp, err := h.gameUC.GetGameByPublicKey(r.Context(), req.GamePublicKey)
 	if err != nil {
 		h.log.Error("GetGameByPublicKey:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, err.Error())
+
+		secResp, err := h.gameUC.GetGameBySecreteKey(r.Context(), req.GamePublicKey)
+		if err != nil {
+			httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		httpresponse.WriteResponseWithStatus(w, http.StatusOK, secResp)
 		return
 	}
+
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
 }
 
@@ -180,6 +193,42 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 // @Failure      405      {string}  string                    "Method Not Allowed"
 // @Router       /leaveGame [post]
 func (g *GameHandler) LeaveGame(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		g.log.Error("Разрешен только метод POST")
+		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод POST")
+		return
+	}
+
+	userID := g.authHandler.GetUserID(w, r)
+	if userID == "" {
+		g.log.Error("UserID не найден в cookie")
+		return
+	}
+
+	var gameLeaveRequest game.GameLeaveRequest
+	if err := utils.DecodeJSONRequest(r, &gameLeaveRequest); err != nil {
+		g.log.Error("Ошибка декодирования JSON:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if gameLeaveRequest.GameKeyPublic == "" {
+		g.log.Error("Запрос на покидание игры не содержит публичного ключа")
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Запрос не содержит публичного ключа игры")
+		return
+	}
+
+	ctx := r.Context()
+	ok, err := g.gameUC.LeaveGame(ctx, gameLeaveRequest.GameKeyPublic, userID)
+	if err != nil || !ok {
+		g.log.Error(err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "Пользователь успешно покинул игру")
+}
+
+func (g *GameHandler) LeaveGameBot(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		g.log.Error("Разрешен только метод POST")
 		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод POST")
@@ -699,4 +748,95 @@ func (g *GameHandler) HandleAnalyseOfCurrentGame(w http.ResponseWriter, r *http.
 	}
 
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, analyseResp)
+}
+
+type GenerateMoveRequest struct {
+	Move game.Move `json:"move"`
+}
+
+type CreateBotGameRequest struct {
+	BoardSize      int     `json:"board_size"`
+	Komi           float64 `json:"komi"`
+	Rules          string  `json:"rules"`
+	IsCreatorBlack bool    `json:"is_creator_black"`
+}
+
+func (h *GameHandler) HandleGenerateMove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Only POST allowed")
+		return
+	}
+
+	var req GenerateMoveRequest
+	if err := utils.DecodeJSONRequest(r, &req); err != nil {
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	userID := h.authHandler.GetUserID(w, r)
+	if userID == "" {
+		h.log.Error("UserID не найден в cookie")
+		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	ctx := r.Context()
+
+	gameId, err := h.gameUC.GetActiveGameSecretKey(ctx, userID)
+	if err != nil {
+		h.log.Error(err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err)
+		return
+	}
+
+	allMoves, newSgf, err := h.gameUC.GenerateMoveAgainstBot(r.Context(), gameId, req.Move)
+	if err != nil {
+		h.log.Error("GenerateMoveAgainstBot:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, map[string]interface{}{
+		"moves": allMoves,
+		"sgf":   newSgf,
+	})
+}
+
+// POST /newBotGame
+func (h *GameHandler) HandleNewBotGame(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Only POST allowed")
+		return
+	}
+	var req CreateBotGameRequest
+	if err := utils.DecodeJSONRequest(r, &req); err != nil {
+		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	userID := h.authHandler.GetUserID(w, r)
+	if userID == "" {
+		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	gameObj, err := h.gameUC.CreateBotGame(r.Context(), game.CreateGameRequest{
+		BoardSize:      req.BoardSize,
+		Komi:           req.Komi,
+		Rules:          req.Rules,
+		IsCreatorBlack: req.IsCreatorBlack,
+	}, userID)
+	if err != nil {
+		if errors.Is(err, errs.ErrUserAlreadyInGame) {
+			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, map[string]string{
+				"error":      "bot game already exists",
+				"secret_key": gameObj.GameKeySecret,
+			})
+			return
+		}
+		h.log.Error("CreateBotGame:", err)
+		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, map[string]string{
+		"secret_key": gameObj.GameKeySecret,
+	})
 }

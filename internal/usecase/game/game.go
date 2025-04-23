@@ -8,7 +8,7 @@ import (
 	"team_exe/internal/domain/game"
 	sgf "team_exe/internal/domain/sgf"
 	"team_exe/internal/domain/user"
-	"team_exe/internal/errors"
+	errs "team_exe/internal/errors"
 	"team_exe/internal/statuses"
 	"team_exe/internal/usecase/auth"
 	"team_exe/internal/usecase/katago"
@@ -21,6 +21,8 @@ type GameStore interface {
 	AddPlayer(ctx context.Context, updatedGame *game.Game) error
 	GetGameByGameKey(ctx context.Context, gameKey string) game.Game
 	SaveSGFToRedis(key string, sgfText string) error
+	SaveSGFToMongo(ctx context.Context, secretKey, sgfText string) error
+	SaveMovesToMongo(ctx context.Context, secretKey string, moves []game.Move) error
 	LoadSGFFromRedis(key string) (string, error)
 	HasUserActiveGameByUserId(ctx context.Context, userID string) (bool, *game.Game, error)
 	GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (*game.Game, error)
@@ -87,7 +89,7 @@ func (g *GameUseCase) CreateGame(ctx context.Context, newGameRequest game.Create
 	}
 	if isAlreadyInGame {
 		newGame.GameKeyPublic = foundGameId
-		return newGame, errors.ErrUserAlreadyInGame
+		return newGame, errs.ErrUserAlreadyInGame
 	}
 
 	gameUser := ConvertUserToGameUser(userById)
@@ -98,7 +100,7 @@ func (g *GameUseCase) CreateGame(ctx context.Context, newGameRequest game.Create
 
 	ok := g.store.PutGameToMongoDatabase(ctx, *newGame)
 	if !ok {
-		return nil, errors.ErrCreateGameFailed
+		return nil, errs.ErrCreateGameFailed
 	}
 	return newGame, nil
 }
@@ -118,7 +120,7 @@ func (g *GameUseCase) JoinGame(ctx context.Context, gameKeyPublic string, userRo
 	}
 
 	if inGame {
-		return &game.Game{GameKeyPublic: foundGameId}, errors.ErrUserAlreadyInGame
+		return &game.Game{GameKeyPublic: foundGameId}, errs.ErrUserAlreadyInGame
 	}
 
 	play, err := g.store.GetGameByPublicKey(ctx, gameKeyPublic)
@@ -126,7 +128,7 @@ func (g *GameUseCase) JoinGame(ctx context.Context, gameKeyPublic string, userRo
 		return nil, err
 	}
 	if play.GameKeySecret == "" {
-		return nil, errors.ErrGameNotFound
+		return nil, errs.ErrGameNotFound
 	}
 
 	userById, err := g.userUsecase.GetUserByUserId(ctx, userID)
@@ -233,7 +235,7 @@ func (g *GameUseCase) GetGameBySecreteKey(ctx context.Context, gameUniqueKey str
 	gameFromDb := g.store.GetGameByGameKey(ctx, gameUniqueKey)
 
 	if gameFromDb.GameKeySecret == "" {
-		return game.Game{}, errors.ErrGameNotFound
+		return game.Game{}, errs.ErrGameNotFound
 	}
 
 	return gameFromDb, nil
@@ -412,6 +414,19 @@ func (g *GameUseCase) HasUserActiveGamesByUserId(ctx context.Context, userID str
 	return false, "", nil
 }
 
+func (g *GameUseCase) GetActiveGameSecretKey(ctx context.Context, userID string) (string, error) {
+	isAlreadyInGame, foundGame, err := g.store.HasUserActiveGameByUserId(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+
+	if isAlreadyInGame {
+		return foundGame.GameKeySecret, nil
+	}
+
+	return "", nil
+}
+
 func (g *GameUseCase) GetArchiveOfGames(ctx context.Context, pageNumber, year int, name string) (*game.ArchiveResponse, error) {
 	if year != 0 {
 		archiveResp, err := g.store.GetArchiveGamesByYear(ctx, year, pageNumber)
@@ -472,4 +487,144 @@ func (g *GameUseCase) AnalyseCurrentGame(ctx context.Context, userID string, gam
 	}
 
 	return g.katagoUsecase.AnalyseCurrentGame(ctx, gameFromSgf.GameKeySecret, &game.Moves{gameFromSgf.Moves}, gameFromSgf.BoardSize, gameFromSgf.Rules)
+}
+
+func (g *GameUseCase) GenerateMoveAgainstBot(
+	ctx context.Context,
+	secretKey string,
+	userMove game.Move,
+) ([]game.Move, string, error) {
+	// 1) Загрузить текущее SGF
+	oldSgf, err := g.store.LoadSGFFromRedis(secretKey)
+	if err != nil {
+		return nil, "", err
+	}
+	// 2) Парсинг SGF в структуру со списком ходов
+	play, err := g.store.ParseSGF(oldSgf)
+	if err != nil {
+		return nil, "", err
+	}
+	// 3) Собрать все ходы + добавить ход пользователя
+	moves := append(play.Moves, userMove)
+	// 4) Вызвать Katago для получения хода бота
+	botInfo, err := g.katagoUsecase.GenerateMove(ctx, secretKey, &game.Moves{Moves: moves}, play.BoardSize, play.Rules)
+	if err != nil {
+		return nil, "", err
+	}
+	// Предполагаем, что MoveInfo содержит поле Coordinates
+	botMove := game.Move{
+		Color:       oppositeColor(userMove.Color),
+		Coordinates: botInfo.Move,
+	}
+	// 5) Собрать окончательный список ходов
+	allMoves := append(moves, botMove)
+	// 6) Обновить SGF: сначала добавляем ход пользователя, потом ход бота
+	base := strings.TrimSuffix(oldSgf, ")")
+
+	rawUser := kataToSgf(userMove.Coordinates, play.BoardSize) // e.g. "dd"
+	base = fmt.Sprintf("%s;%s[%s]", base, userMove.Color, rawUser)
+
+	rawBot := kataToSgf(botMove.Coordinates, play.BoardSize)
+	newSgf := fmt.Sprintf("%s;%s[%s])", base, botMove.Color, rawBot)
+	// 7) Сохранить в Redis и Mongo
+	if err := g.store.SaveSGFToRedis(secretKey, newSgf); err != nil {
+		return nil, "", err
+	}
+	if err := g.store.SaveSGFToMongo(ctx, secretKey, newSgf); err != nil {
+		return nil, "", err
+	}
+
+	if err := g.store.SaveMovesToMongo(ctx, secretKey, allMoves); err != nil {
+		return nil, "", err
+	}
+
+	return allMoves, newSgf, nil
+}
+
+func (g *GameUseCase) CreateBotGame(
+	ctx context.Context,
+	req game.CreateGameRequest,
+	creatorID string,
+) (*game.Game, error) {
+	// 1) Смотрим, есть ли у пользователя любая активная игра
+	inGame, existingPublic, err := g.HasUserActiveGamesByUserId(ctx, creatorID)
+	if err != nil {
+		return nil, err
+	}
+	if inGame {
+		// подгружаем данные уже существующей партии
+		existingGame, err := g.store.GetGameByPublicKey(ctx, existingPublic)
+		if err != nil {
+			return nil, err
+		}
+		// сразу возвращаем её вместе с ErrUserAlreadyInGame
+		return existingGame, errs.ErrUserAlreadyInGame
+	}
+
+	// 2) Если нет — создаём новую игру с ботом как обычно
+	secret, public := g.store.GenerateGameKeys(ctx)
+	botGame := &game.Game{
+		BoardSize:     req.BoardSize,
+		Komi:          req.Komi,
+		GameKeySecret: secret,
+		GameKeyPublic: public,
+		Status:        statuses.StatusInProgress,
+		CreatedAt:     time.Now(),
+		Rules:         req.Rules,
+	}
+
+	// конвертим пользователя
+	userData, err := g.userUsecase.GetUserByUserId(ctx, creatorID)
+	if err != nil {
+		return nil, err
+	}
+	creatorGU := ConvertUserToGameUser(userData)
+	creatorGU.Role = "player"
+	if req.IsCreatorBlack {
+		botGame.PlayerBlack = creatorID
+		creatorGU.Color = "black"
+	} else {
+		botGame.PlayerWhite = creatorID
+		creatorGU.Color = "white"
+	}
+
+	// выставляем бот-пользователя
+	botGU := &game.GameUser{
+		ID:       "bot",
+		Username: "bot",
+		Rating:   0,
+		Role:     "bot",
+		Color:    oppositeColor(creatorGU.Color),
+	}
+	if creatorGU.Color == "black" {
+		botGame.PlayerWhite = "bot"
+	} else {
+		botGame.PlayerBlack = "bot"
+	}
+
+	botGame.Users = []*game.GameUser{creatorGU, botGU}
+
+	// сохраняем в Mongo + в Redis SGF
+	if ok := g.store.PutGameToMongoDatabase(ctx, *botGame); !ok {
+		return nil, errs.ErrCreateGameFailed
+	}
+
+	preparedSgf := g.PrepareSgfFile(*botGame)
+	sgfStr := SerializeSGF(&preparedSgf)
+	if err := g.store.SaveSGFToRedis(secret, sgfStr); err != nil {
+		return nil, err
+	}
+	if err := g.store.SaveSGFToMongo(ctx, secret, sgfStr); err != nil {
+		return nil, err
+	}
+
+	return botGame, nil
+}
+
+// вспомогательная функция
+func oppositeColor(c string) string {
+	if c == "B" || c == "black" {
+		return "W"
+	}
+	return "B"
 }

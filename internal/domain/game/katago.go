@@ -21,6 +21,10 @@ type KataGoResponse struct {
 	Error          string     `json:"error,omitempty"`
 }
 
+type GenerateMoveResponse struct {
+	MoveInfos []MoveInfo `json:"moveInfos,omitempty"`
+}
+
 type MoveInfo struct {
 	EdgeVisits    int      `json:"edgeVisits"`
 	EdgeWeight    float64  `json:"edgeWeight"`
