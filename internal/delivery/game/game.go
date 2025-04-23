@@ -191,11 +191,11 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 // @Failure      400      {object}  httpresponse.ErrorResponse "Bad request or invalid JSON"
 // @Failure      401      {string}  string                    "Unauthorized"
 // @Failure      405      {string}  string                    "Method Not Allowed"
-// @Router       /leaveGame [post]
+// @Router       /leaveGame [get]
 func (g *GameHandler) LeaveGame(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		g.log.Error("Разрешен только метод POST")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод POST")
+	if r.Method != http.MethodGet {
+		g.log.Error("Разрешен только метод GET")
+		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод GET")
 		return
 	}
 
@@ -205,57 +205,8 @@ func (g *GameHandler) LeaveGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var gameLeaveRequest game.GameLeaveRequest
-	if err := utils.DecodeJSONRequest(r, &gameLeaveRequest); err != nil {
-		g.log.Error("Ошибка декодирования JSON:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	if gameLeaveRequest.GameKeyPublic == "" {
-		g.log.Error("Запрос на покидание игры не содержит публичного ключа")
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Запрос не содержит публичного ключа игры")
-		return
-	}
-
 	ctx := r.Context()
-	ok, err := g.gameUC.LeaveGame(ctx, gameLeaveRequest.GameKeyPublic, userID)
-	if err != nil || !ok {
-		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "Пользователь успешно покинул игру")
-}
-
-func (g *GameHandler) LeaveGameBot(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		g.log.Error("Разрешен только метод POST")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод POST")
-		return
-	}
-
-	userID := g.authHandler.GetUserID(w, r)
-	if userID == "" {
-		g.log.Error("UserID не найден в cookie")
-		return
-	}
-
-	var gameLeaveRequest game.GameLeaveRequest
-	if err := utils.DecodeJSONRequest(r, &gameLeaveRequest); err != nil {
-		g.log.Error("Ошибка декодирования JSON:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	if gameLeaveRequest.GameKeyPublic == "" {
-		g.log.Error("Запрос на покидание игры не содержит публичного ключа")
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Запрос не содержит публичного ключа игры")
-		return
-	}
-
-	ctx := r.Context()
-	ok, err := g.gameUC.LeaveGame(ctx, gameLeaveRequest.GameKeyPublic, userID)
+	ok, err := g.gameUC.LeaveGame(ctx, userID)
 	if err != nil || !ok {
 		g.log.Error(err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())

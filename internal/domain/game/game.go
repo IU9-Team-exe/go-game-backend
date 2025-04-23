@@ -73,7 +73,7 @@ type GameJoinRequest struct {
 
 // @name GameLeaveRequest
 type GameLeaveRequest struct {
-	GameKeyPublic string `json:"public_key" bson:"public_key"`
+	GameKeyPublic string `json:"public_key,omitempty" bson:"public_key"`
 }
 
 // @name GameStateResponse

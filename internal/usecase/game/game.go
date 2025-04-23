@@ -170,13 +170,12 @@ func (g *GameUseCase) JoinGame(ctx context.Context, gameKeyPublic string, userRo
 	return play, nil
 }
 
-func (g *GameUseCase) LeaveGame(ctx context.Context, gamePublicKey, userID string) (bool, error) {
+func (g *GameUseCase) LeaveGame(ctx context.Context, userID string) (bool, error) {
 	play, err := g.store.GetActiveGameByUserId(ctx, userID)
 	if err != nil {
 		return false, err
 	}
 	if (play.PlayerWhite == "" && play.PlayerBlack != "") || (play.PlayerWhite != "" && play.PlayerBlack == "") {
-		// пользователь один, значит просто выходит
 		err = g.store.LeaveGameBySecretKey(ctx, play.GameKeySecret, userID)
 		if err != nil {
 			return false, err
