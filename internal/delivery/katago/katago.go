@@ -1,5 +1,6 @@
 package katago
 
+/*
 import (
 	"encoding/json"
 	"go.uber.org/zap"
@@ -70,3 +71,4 @@ func writeJSONError(log *zap.SugaredLogger, w http.ResponseWriter, status int, m
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 	log.Debugf("writeJSONError: %s", msg)
 }
+*/

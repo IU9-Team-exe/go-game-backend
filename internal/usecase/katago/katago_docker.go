@@ -34,6 +34,9 @@ func (k *KatagoUseCase) CheckMove(ctx context.Context, gameUniqId string, moves 
 }
 
 func (k *KatagoUseCase) AnalyseCurrentGame(ctx context.Context, gameUniqId string, moves *game.Moves, boardSize int, rules string) (*game.KataGoResponse, error) {
+	fmt.Println("MOVES:")
+	fmt.Println(moves)
+
 	includeOwnership := true
 	includePolicy := true
 	resp, err := k.store.SendRequestToKatago(ctx, gameUniqId, moves, boardSize, rules, includeOwnership, includePolicy)

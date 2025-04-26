@@ -28,15 +28,14 @@ func NewTaskHandler(log *zap.SugaredLogger, cfg *bootstrap.Config, auth *auth.Au
 }
 
 // HandleStoreInMongo godoc
-// @Summary      Store tasks in MongoDB
-// @Description  Reads all `.sgf` files from the given path and saves them into the MongoDB `tasks` collection.
+// @Summary      Загрузить задачи SGF в MongoDB
+// @Description  Рекурсивно читает все файлы `*.sgf` по указанному пути и сохраняет их в коллекцию `tasks`.
 // @Tags         tasks
-// @Accept       json
 // @Produce      json
-// @Param        path  query     string  true  "Filesystem path to directory containing SGF files"
-// @Success      200   {string}  string  "Successfully stored tasks in MongoDB"
-// @Failure      405   {string}  string  "Method Not Allowed"
-// @Failure      416   {string}  string  "Requested Range Not Satisfiable"  // e.g. error during file processing or Mongo insert
+// @Param        path  query     string  true  "Путь к директории с SGF"
+// @Success      200   {object}  httpresponse.Response      "ОК"
+// @Failure      405   {object}  httpresponse.Response      "Метод не поддерживается"
+// @Failure      416   {object}  httpresponse.Response      "Ошибка чтения файлов"
 // @Router       /storeTasksToMongoByPath [get]
 func (th *TaskHandler) HandleStoreInMongo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -57,18 +56,16 @@ func (th *TaskHandler) HandleStoreInMongo(w http.ResponseWriter, r *http.Request
 }
 
 // HandleGetAvailableGamesForUser godoc
-// @Summary      Get available tasks for a user
-// @Description  Returns a paginated list of tasks at the specified difficulty level, marking each as done or not_done.
+// @Summary      Список задач пользователя
+// @Description  Возвращает постраничный список задач указанного уровня сложности с пометкой «решена/нет».
 // @Tags         tasks
 // @Security     ApiKeyAuth
-// @Accept       json
 // @Produce      json
-// @Param        page   query     int     true   "Page number (1-based)"
-// @Param        level  query     int     true   "Task difficulty level"
+// @Param        page   query     int  true  "Номер страницы (1‑based)"
+// @Param        level  query     int  true  "Уровень сложности"
 // @Success      200    {object}  task.TaskResponse
-// @Failure      401    {string}  string  "Unauthorized"                     // if no valid user cookie
-// @Failure      405    {string}  string  "Method Not Allowed"
-// @Failure      416    {string}  string  "Requested Range Not Satisfiable"  // e.g. missing or invalid parameters
+// @Failure      401    {object}  httpresponse.Response
+// @Failure      416    {object}  httpresponse.Response      "Некорректные параметры"
 // @Router       /getAvailableGamesForUser [get]
 func (th *TaskHandler) HandleGetAvailableGamesForUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -129,17 +126,15 @@ func (th *TaskHandler) HandleGetAvailableGamesForUser(w http.ResponseWriter, r *
 }
 
 // HandleMarkTaskAsDone godoc
-// @Summary      Mark a task as done for the current user
-// @Description  Marks the task with the given ID as completed in the user's record.
+// @Summary      Отметить задачу как решённую
+// @Description  Добавляет ID задачи в список выполненных пользователя.
 // @Tags         tasks
 // @Security     ApiKeyAuth
-// @Accept       json
 // @Produce      json
-// @Param        taskID  query     int     true   "Unique identifier of the task to mark as done"
-// @Success      200     {string}  string  "ok"
-// @Failure      401     {string}  string  "Unauthorized"                     // if no valid user cookie
-// @Failure      405     {string}  string  "Method Not Allowed"
-// @Failure      416     {string}  string  "Requested Range Not Satisfiable"  // e.g. missing or invalid taskID
+// @Param        taskID  query     int  true  "ID задачи"
+// @Success      200     {object}  httpresponse.Response
+// @Failure      401     {object}  httpresponse.Response
+// @Failure      416     {object}  httpresponse.Response      "Некорректный taskID"
 // @Router       /markTaskAsDone [get]
 func (th *TaskHandler) HandleMarkTaskAsDone(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

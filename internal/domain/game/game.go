@@ -24,6 +24,7 @@ type Game struct {
 	Komi          float64         `json:"komi" bson:"komi"`
 	Rules         string          `json:"rules" bson:"rules"`
 	Sgf           string          `json:"sgf" bson:"sgf"`
+	IsFromArchive bool
 }
 
 // @name GameFromArchive

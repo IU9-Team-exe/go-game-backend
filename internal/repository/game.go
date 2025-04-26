@@ -252,24 +252,52 @@ func (g *GameRepository) CalculateUserColor(ctx context.Context, gameKey string,
 	return "black"
 }
 
-func (g *GameRepository) GetGameByGameKey(ctx context.Context, gameKey string) game.Game {
+func (g *GameRepository) GetGameByGameKey(ctx context.Context, gameKey string) (*game.Game, error) {
+	// 1) Таймаут
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	collection := g.mongo.Collection("games")
-
-	filter := bson.M{"game_key": gameKey}
-
-	var result game.Game
-	err := collection.FindOne(ctx, filter).Decode(&result)
-
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			g.log.Error("игра с ID %s не найдена", gameKey)
-		}
+	// 2) Пытаемся найти в “живых” играх
+	var live game.Game
+	err := g.mongo.Collection("games").
+		FindOne(ctx, bson.M{"game_key": gameKey}).
+		Decode(&live)
+	if err == nil {
+		return &live, nil
+	}
+	if err != mongo.ErrNoDocuments {
+		// реальная ошибка Mongo
+		return nil, err
 	}
 
-	return result
+	// 3) Не нашли в games — проверяем, валидна ли строка как ObjectID
+	oid, err := primitive.ObjectIDFromHex(gameKey)
+	if err != nil {
+		// невалидный hex — дальше искать бесполезно
+		return nil, mongo.ErrNoDocuments
+	}
+
+	// 4) Ищем в архиве
+	var archived game.GameFromArchive
+	err = g.mongo.Collection("archive").
+		FindOne(ctx, bson.M{"_id": oid}).
+		Decode(&archived)
+	if err != nil {
+		return nil, err // ErrNoDocuments или другая ошибка
+	}
+
+	mapped := game.Game{
+		GameKeySecret: gameKey,
+		PlayerBlack:   archived.BlackPlayer,
+		PlayerWhite:   archived.WhitePlayer,
+		CreatedAt:     archived.Date,
+		Moves:         archived.Moves,
+		Komi:          archived.Komi,
+		Rules:         archived.Rules,
+		Sgf:           archived.Sgf,
+		IsFromArchive: true,
+	}
+	return &mapped, nil
 }
 
 func (g *GameRepository) SaveSGFToRedis(key string, sgfText string) error {
@@ -384,37 +412,38 @@ func (g *GameRepository) GetAllActiveGames() ([]game.Game, error) {
 	return result, nil
 }
 
-func (g *GameRepository) HasUserActiveGameByUserId(ctx context.Context, userID string) (bool, *game.Game, error) {
+func (g *GameRepository) HasUserActiveGameByUserId(
+	ctx context.Context,
+	userID string,
+) ([]game.Game, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	collection := g.mongo.Collection("games")
 	filter := bson.M{
 		"$and": []bson.M{
-			{
-				"$or": []bson.M{
-					{"player_black": userID},
-					{"player_white": userID},
-				},
-			},
-			{
-				"status": bson.M{
-					"$ne": statuses.StatusCompleted,
-				},
-			},
+			{"$or": []bson.M{
+				{"player_black": userID},
+				{"player_white": userID},
+			}},
+			{"status": bson.M{"$ne": statuses.StatusCompleted}},
 		},
 	}
 
-	var foundGame game.Game
-	err := collection.FindOne(ctx, filter).Decode(&foundGame)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return false, nil, nil
-	} else if err != nil {
-		g.log.Error(err)
-		return false, nil, err
+	cursor, err := collection.Find(ctx, filter)
+	if err != nil {
+		g.log.Error("Find active games:", err)
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var games []game.Game
+	if err := cursor.All(ctx, &games); err != nil {
+		g.log.Error("Decode active games:", err)
+		return nil, err
 	}
 
-	return true, &foundGame, nil
+	return games, nil
 }
 
 func (g *GameRepository) GetActiveGameByUserId(ctx context.Context, userID string) (game.Game, error) {

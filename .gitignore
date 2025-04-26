@@ -36,3 +36,5 @@ internal/repository/http-client.private.env.json
 mongo_volume_backup.tar.gz
 dump.tar.gz
 dump
+
+scrapper

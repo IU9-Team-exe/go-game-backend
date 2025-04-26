@@ -11,8 +11,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
-
 	_ "team_exe/docs"
 
 	httpSwagger "github.com/swaggo/http-swagger"
@@ -21,19 +19,18 @@ import (
 	"team_exe/internal/bootstrap"
 	authDelivery "team_exe/internal/delivery/auth"
 	gameDelivery "team_exe/internal/delivery/game"
-	katagoDelivery "team_exe/internal/delivery/katago"
+	//katagoDelivery "team_exe/internal/delivery/katago"
 	taskDelivery "team_exe/internal/delivery/tasks"
 	ownMiddleware "team_exe/internal/middleware"
 	internalRepository "team_exe/internal/repository"
 	katagoUseCase "team_exe/internal/usecase/katago"
-	katagoProto "team_exe/microservices/proto"
+	//katagoProto "team_exe/microservices/proto"
 )
 
 type mainDeliveryHandler struct {
-	auth   *authDelivery.AuthHandler
-	katago *katagoDelivery.KatagoHandler
-	game   *gameDelivery.GameHandler
-	task   *taskDelivery.TaskHandler
+	auth *authDelivery.AuthHandler
+	game *gameDelivery.GameHandler
+	task *taskDelivery.TaskHandler
 }
 
 type dataBaseAdapters struct {
@@ -67,14 +64,8 @@ func main() {
 	defer databaseAdapters.mongoAdapter.Close(ctx)
 	defer databaseAdapters.redisAdapter.Close(ctx)
 
-	grpcKatago, err := grpc.Dial("host.docker.internal:8082", grpc.WithInsecure())
-	if err != nil {
-		logger.Fatal("Failed to dial grpc", zap.Error(err))
-	}
-	defer grpcKatago.Close()
-
 	r := chi.NewRouter()
-	handlers := initializeDeliveryHandlers(ctx, *cfg, logger, grpcKatago, databaseAdapters)
+	handlers := initializeDeliveryHandlers(*cfg, logger, databaseAdapters)
 	handlers.Router(r, cfg.IsLocalCors)
 
 	port := ":8080"
@@ -101,12 +92,11 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Post("/login", h.auth.Login)
 	r.Post("/logout", h.auth.Logout)
 	r.Post("/register", h.auth.Register)
-	r.Post("/autoBotGenerateMove", h.katago.HandleGenerateMove)
 	r.Post("/NewGame", h.game.HandleNewGame)
 	r.Post("/JoinGame", h.game.HandleJoinGame)
 	r.Get("/startGame", h.game.HandleStartGame)
 	r.Post("/getGameByPublicKey", h.game.HandleGetGameByPublicKey)
-	r.Get("/leaveGame", h.game.LeaveGame)
+	r.Get("/leaveGame", h.game.HandleLeaveGame)
 	r.Post("/getUserById", h.auth.GetUserByID)
 	r.Get("/getArchive", h.game.HandleGetArchivePaginator)
 	r.Get("/getYearsInArchive", h.game.HandleGetYearsInArchive)
@@ -115,7 +105,7 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Get("/storeTasksToMongoByPath", h.task.HandleStoreInMongo)
 	r.Get("/getAvailableGamesForUser", h.task.HandleGetAvailableGamesForUser)
 	r.Get("/markTaskAsDone", h.task.HandleMarkTaskAsDone)
-	r.Post("/analyseCurrent", h.game.HandleAnalyseOfCurrentGame)
+	r.Get("/analyseCurrent", h.game.HandleAnalyseGame)
 
 	r.Post("/generateMove", h.game.HandleGenerateMove)
 	r.Post("/newBotGame", h.game.HandleNewBotGame)
@@ -142,14 +132,10 @@ func initDatabaseAdapters(ctx context.Context, log *zap.SugaredLogger, cfg boots
 }
 
 func initializeDeliveryHandlers(
-	ctx context.Context,
 	cfg bootstrap.Config,
 	log *zap.SugaredLogger,
-	grpcKatago *grpc.ClientConn,
 	databaseAdapters *dataBaseAdapters,
 ) *mainDeliveryHandler {
-	katagoManager := katagoProto.NewKatagoServiceClient(grpcKatago)
-	katagoDeliveryHandler := katagoDelivery.NewKatagoHandler(cfg, log, katagoManager)
 
 	katagoRepo := internalRepository.NewKatagoStorage(&cfg, databaseAdapters.mongoAdapter, databaseAdapters.redisAdapter)
 	katagoUC := katagoUseCase.NewKatagoUseCase(katagoRepo)
@@ -159,10 +145,9 @@ func initializeDeliveryHandlers(
 	taskDeliveryHandler := taskDelivery.NewTaskHandler(log, &cfg, authDeliveryHandler, databaseAdapters.mongoAdapter)
 
 	return &mainDeliveryHandler{
-		auth:   authDeliveryHandler,
-		katago: katagoDeliveryHandler,
-		game:   gameDeliveryHandler,
-		task:   taskDeliveryHandler,
+		auth: authDeliveryHandler,
+		game: gameDeliveryHandler,
+		task: taskDeliveryHandler,
 	}
 }
 

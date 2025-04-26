@@ -19,12 +19,12 @@ type GameStore interface {
 	GenerateGameKeys(ctx context.Context) (gameKeySecret string, gameKeyPublic string)
 	PutGameToMongoDatabase(ctx context.Context, gameData game.Game) bool
 	AddPlayer(ctx context.Context, updatedGame *game.Game) error
-	GetGameByGameKey(ctx context.Context, gameKey string) game.Game
+	GetGameByGameKey(ctx context.Context, gameKey string) (*game.Game, error)
 	SaveSGFToRedis(key string, sgfText string) error
 	SaveSGFToMongo(ctx context.Context, secretKey, sgfText string) error
 	SaveMovesToMongo(ctx context.Context, secretKey string, moves []game.Move) error
 	LoadSGFFromRedis(key string) (string, error)
-	HasUserActiveGameByUserId(ctx context.Context, userID string) (bool, *game.Game, error)
+	HasUserActiveGameByUserId(ctx context.Context, userID string) ([]game.Game, error)
 	GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (*game.Game, error)
 	GetActiveGameByUserId(ctx context.Context, userID string) (game.Game, error)
 
@@ -83,13 +83,14 @@ func (g *GameUseCase) CreateGame(ctx context.Context, newGameRequest game.Create
 		return nil, err
 	}
 
-	isAlreadyInGame, foundGameId, err := g.HasUserActiveGamesByUserId(ctx, creatorID)
+	allGames, err := g.HasUserActiveGamesByUserId(ctx, creatorID)
 	if err != nil {
 		return nil, err
 	}
-	if isAlreadyInGame {
-		newGame.GameKeyPublic = foundGameId
-		return newGame, errs.ErrUserAlreadyInGame
+	for _, existing := range allGames {
+		if !isBotGame(&existing) {
+			return &existing, errs.ErrUserAlreadyInGame
+		}
 	}
 
 	gameUser := ConvertUserToGameUser(userById)
@@ -105,6 +106,10 @@ func (g *GameUseCase) CreateGame(ctx context.Context, newGameRequest game.Create
 	return newGame, nil
 }
 
+func isBotGame(g *game.Game) bool {
+	return g.PlayerBlack == "bot" || g.PlayerWhite == "bot"
+}
+
 func ConvertUserToGameUser(user user.User) *game.GameUser {
 	return &game.GameUser{
 		ID:       user.ID,
@@ -114,13 +119,14 @@ func ConvertUserToGameUser(user user.User) *game.GameUser {
 }
 
 func (g *GameUseCase) JoinGame(ctx context.Context, gameKeyPublic string, userRole, userID string) (*game.Game, error) {
-	inGame, foundGameId, err := g.HasUserActiveGamesByUserId(ctx, userID)
+	allGames, err := g.HasUserActiveGamesByUserId(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-
-	if inGame {
-		return &game.Game{GameKeyPublic: foundGameId}, errs.ErrUserAlreadyInGame
+	for _, existing := range allGames {
+		if !isBotGame(&existing) {
+			return &existing, errs.ErrUserAlreadyInGame
+		}
 	}
 
 	play, err := g.store.GetGameByPublicKey(ctx, gameKeyPublic)
@@ -231,13 +237,16 @@ func (g *GameUseCase) GetGameInfoByPublicKey(ctx context.Context, gameKeyPublic 
 }
 
 func (g *GameUseCase) GetGameBySecreteKey(ctx context.Context, gameUniqueKey string) (game.Game, error) {
-	gameFromDb := g.store.GetGameByGameKey(ctx, gameUniqueKey)
+	gameFromDb, err := g.store.GetGameByGameKey(ctx, gameUniqueKey)
+	if err != nil {
+		return game.Game{}, err
+	}
 
 	if gameFromDb.GameKeySecret == "" {
 		return game.Game{}, errs.ErrGameNotFound
 	}
 
-	return gameFromDb, nil
+	return *gameFromDb, nil
 }
 
 func (g *GameUseCase) PrepareSgfFile(gameData game.Game) sgf.SGF {
@@ -393,37 +402,34 @@ func AppendMoveToSgf(sgfText string, move game.Move) string {
 }
 
 func (g *GameUseCase) IsUserInGameByGameId(ctx context.Context, userID string, gameKey string) bool {
-	play := g.store.GetGameByGameKey(ctx, gameKey)
+	play, err := g.store.GetGameByGameKey(ctx, gameKey)
+	if err != nil {
+		return false
+	}
+
 	if play.PlayerWhite == userID || play.PlayerBlack == userID {
 		return true
 	}
 	return false
 }
 
-func (g *GameUseCase) HasUserActiveGamesByUserId(ctx context.Context, userID string) (bool, string, error) {
-	isAlreadyInGame, foundGame, err := g.store.HasUserActiveGameByUserId(ctx, userID)
-	if err != nil {
-		return true, "", err
-	}
-
-	if isAlreadyInGame {
-		return true, foundGame.GameKeyPublic, nil
-	}
-
-	return false, "", nil
+func (g *GameUseCase) HasUserActiveGamesByUserId(ctx context.Context, userID string) ([]game.Game, error) {
+	return g.store.HasUserActiveGameByUserId(ctx, userID)
 }
 
 func (g *GameUseCase) GetActiveGameSecretKey(ctx context.Context, userID string) (string, error) {
-	isAlreadyInGame, foundGame, err := g.store.HasUserActiveGameByUserId(ctx, userID)
+	activeGames, err := g.store.HasUserActiveGameByUserId(ctx, userID)
 	if err != nil {
 		return "", err
 	}
 
-	if isAlreadyInGame {
-		return foundGame.GameKeySecret, nil
+	for _, play := range activeGames {
+		if !isBotGame(&play) {
+			return play.GameKeySecret, nil
+		}
 	}
 
-	return "", nil
+	return activeGames[0].GameKeySecret, nil
 }
 
 func (g *GameUseCase) GetArchiveOfGames(ctx context.Context, pageNumber, year int, name string) (*game.ArchiveResponse, error) {
@@ -469,18 +475,24 @@ func (g *GameUseCase) GetGameFromArchiveById(ctx context.Context, gameFromArchiv
 	return foundGame, nil
 }
 
-func (g *GameUseCase) AnalyseCurrentGame(ctx context.Context, userID string, gameKeyPublic string) (*game.KataGoResponse, error) {
-	mongoGame, err := g.GetGameByPublicKey(ctx, gameKeyPublic)
+func (g *GameUseCase) AnalyseCurrentGame(ctx context.Context, gameKeySecret string) (*game.KataGoResponse, error) {
+	gameCurrentOrFromArchive, err := g.GetGameBySecreteKey(ctx, gameKeySecret)
 	if err != nil {
 		return nil, err
 	}
 
-	sgfFromRedis, err := g.store.LoadSGFFromRedis(mongoGame.GameKeySecret)
-	if err != nil {
-		return nil, err
+	gameSgf := ""
+
+	if !gameCurrentOrFromArchive.IsFromArchive {
+		gameSgf, err = g.store.LoadSGFFromRedis(gameKeySecret)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		gameSgf = gameCurrentOrFromArchive.Sgf
 	}
 
-	gameFromSgf, err := g.store.ParseSGF(sgfFromRedis)
+	gameFromSgf, err := g.store.ParseSGF(gameSgf)
 	if err != nil {
 		return nil, err
 	}
@@ -546,18 +558,14 @@ func (g *GameUseCase) CreateBotGame(
 	creatorID string,
 ) (*game.Game, error) {
 	// 1) Смотрим, есть ли у пользователя любая активная игра
-	inGame, existingPublic, err := g.HasUserActiveGamesByUserId(ctx, creatorID)
+	allGames, err := g.HasUserActiveGamesByUserId(ctx, creatorID)
 	if err != nil {
 		return nil, err
 	}
-	if inGame {
-		// подгружаем данные уже существующей партии
-		existingGame, err := g.store.GetGameByPublicKey(ctx, existingPublic)
-		if err != nil {
-			return nil, err
+	for _, existing := range allGames {
+		if isBotGame(&existing) {
+			return &existing, errs.ErrUserAlreadyInGame
 		}
-		// сразу возвращаем её вместе с ErrUserAlreadyInGame
-		return existingGame, errs.ErrUserAlreadyInGame
 	}
 
 	// 2) Если нет — создаём новую игру с ботом как обычно
