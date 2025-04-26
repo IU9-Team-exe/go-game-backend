@@ -118,7 +118,7 @@ const docTemplate = `{
             }
         },
         "/analyseCurrent": {
-            "post": {
+            "get": {
                 "security": [
                     {
                         "ApiKeyAuth": []
@@ -137,13 +137,10 @@ const docTemplate = `{
                 "summary": "Анализ текущего состояния игры",
                 "parameters": [
                     {
-                        "description": "Секретный ключ игры (опционально)",
-                        "name": "payload",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/game.AnalyseGameRequest"
-                        }
+                        "type": "string",
+                        "description": "ключ игры (secret, опционально)",
+                        "name": "secret_key",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -219,37 +216,31 @@ const docTemplate = `{
                     "200": {
                         "description": "Список ходов и новый SGF",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/httpresponse.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "Body": {
-                                            "$ref": "#/definitions/game.BotGenerateMoveResponse"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/game.BotGenerateMoveResponse"
                         }
                     },
                     "400": {
                         "description": "Неверный JSON или ошибка логики игры",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.Response"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Неавторизован",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.Response"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "405": {
-                        "description": "Метод не разрешён",
+                        "description": "Method Not Allowed",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.Response"
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     }
                 }
@@ -1085,14 +1076,6 @@ const docTemplate = `{
                 }
             }
         },
-        "game.AnalyseGameRequest": {
-            "type": "object",
-            "properties": {
-                "game_secret_key": {
-                    "type": "string"
-                }
-            }
-        },
         "game.ArchiveNamesResponse": {
             "type": "object",
             "properties": {
@@ -1218,6 +1201,9 @@ const docTemplate = `{
                 },
                 "game_key_public": {
                     "type": "string"
+                },
+                "isFromArchive": {
+                    "type": "boolean"
                 },
                 "komi": {
                     "type": "number"

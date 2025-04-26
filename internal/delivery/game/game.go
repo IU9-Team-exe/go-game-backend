@@ -682,7 +682,7 @@ func (g *GameHandler) HandleAnalyseGame(w http.ResponseWriter, r *http.Request) 
 	secretKey := r.URL.Query().Get("secret_key")
 	if secretKey == "" {
 		g.log.Info("Запрос на анализ игры не содержит уникальный ключ игры, будем искать в активных играх юзера")
-		foundGameSecretKey, err := g.gameUC.GetActiveGameSecretKey(ctx, userID)
+		foundGameSecretKey, err := g.gameUC.GetActiveGameSecretKey(ctx, userID, false)
 		if err != nil {
 			g.log.Error(err)
 			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Active games not found for this user")
@@ -719,11 +719,12 @@ type CreateBotGameRequest struct {
 // @Security     ApiKeyAuth
 // @Accept       json
 // @Produce      json
-// @Param        payload  body      GenerateMoveRequest                              true  "Ход пользователя"
-// @Success      200      {object}  httpresponse.Response{Body=BotGenerateMoveResponse}  "Список ходов и новый SGF"
-// @Failure      400      {object}  httpresponse.Response                              "Неверный JSON или ошибка логики игры"
-// @Failure      401      {object}  httpresponse.Response                              "Неавторизован"
-// @Failure      405      {object}  httpresponse.Response                              "Метод не разрешён"
+// @Param        payload  body      GenerateMoveRequest     true  "Ход пользователя"
+// @Success      200      {object}  BotGenerateMoveResponse  "Список ходов и новый SGF"
+// @Failure      400      {object}  httpresponse.ErrorResponse  "Неверный JSON или ошибка логики игры"
+// @Failure      401      {object}  httpresponse.ErrorResponse  "Неавторизован"
+// @Failure      405      {object}  httpresponse.ErrorResponse  "Method Not Allowed"
+// @Failure      500      {object}  httpresponse.ErrorResponse  "Внутренняя ошибка сервера"
 // @Router       /generateMove [post]
 func (h *GameHandler) HandleGenerateMove(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -746,7 +747,8 @@ func (h *GameHandler) HandleGenerateMove(w http.ResponseWriter, r *http.Request)
 
 	ctx := r.Context()
 
-	gameId, err := h.gameUC.GetActiveGameSecretKey(ctx, userID)
+	gameId, err := h.gameUC.GetActiveGameSecretKey(ctx, userID, true)
+	h.log.Info("Get active game: ")
 	if err != nil {
 		h.log.Error(err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err)
@@ -756,7 +758,7 @@ func (h *GameHandler) HandleGenerateMove(w http.ResponseWriter, r *http.Request)
 	allMoves, newSgf, err := h.gameUC.GenerateMoveAgainstBot(r.Context(), gameId, req.Move)
 	if err != nil {
 		h.log.Error("GenerateMoveAgainstBot:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, err.Error())
+		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, httpresponse.ErrorResponse{ErrorDescription: err.Error()})
 		return
 	}
 

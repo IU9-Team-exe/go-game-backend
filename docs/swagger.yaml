@@ -21,11 +21,6 @@ definitions:
       user_id:
         type: string
     type: object
-  game.AnalyseGameRequest:
-    properties:
-      game_secret_key:
-        type: string
-    type: object
   game.ArchiveNamesResponse:
     properties:
       names:
@@ -108,6 +103,8 @@ definitions:
         type: string
       game_key_public:
         type: string
+      isFromArchive:
+        type: boolean
       komi:
         type: number
       moves:
@@ -528,18 +525,16 @@ paths:
       tags:
       - game
   /analyseCurrent:
-    post:
+    get:
       consumes:
       - application/json
       description: Отправляет SGF текущей игры в KataGo для анализа. Если ключ не
         передан, будет использована активная игра пользователя.
       parameters:
-      - description: Секретный ключ игры (опционально)
-        in: body
-        name: payload
-        required: true
-        schema:
-          $ref: '#/definitions/game.AnalyseGameRequest'
+      - description: ключ игры (secret, опционально)
+        in: query
+        name: secret_key
+        type: string
       produces:
       - application/json
       responses:
@@ -588,24 +583,23 @@ paths:
         "200":
           description: Список ходов и новый SGF
           schema:
-            allOf:
-            - $ref: '#/definitions/httpresponse.Response'
-            - properties:
-                Body:
-                  $ref: '#/definitions/game.BotGenerateMoveResponse'
-              type: object
+            $ref: '#/definitions/game.BotGenerateMoveResponse'
         "400":
           description: Неверный JSON или ошибка логики игры
           schema:
-            $ref: '#/definitions/httpresponse.Response'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
         "401":
           description: Неавторизован
           schema:
-            $ref: '#/definitions/httpresponse.Response'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
         "405":
-          description: Метод не разрешён
+          description: Method Not Allowed
           schema:
-            $ref: '#/definitions/httpresponse.Response'
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Сгенерировать ход против бота

@@ -60,7 +60,10 @@ func (k *KatagoUseCase) GenerateMove(ctx context.Context, gameUniqId string, mov
 	}
 
 	if len(resp.MoveInfos) == 0 {
-		return nil, fmt.Errorf("Katago returned no move infos")
+		if resp.Error != "" {
+			return nil, fmt.Errorf(resp.Error)
+		}
+		return nil, fmt.Errorf("Katago returned no move infos without error")
 	}
 
 	if resp.ID != gameUniqId {

@@ -417,19 +417,19 @@ func (g *GameUseCase) HasUserActiveGamesByUserId(ctx context.Context, userID str
 	return g.store.HasUserActiveGameByUserId(ctx, userID)
 }
 
-func (g *GameUseCase) GetActiveGameSecretKey(ctx context.Context, userID string) (string, error) {
+func (g *GameUseCase) GetActiveGameSecretKey(ctx context.Context, userID string, isGameWithBot bool) (string, error) {
 	activeGames, err := g.store.HasUserActiveGameByUserId(ctx, userID)
 	if err != nil {
 		return "", err
 	}
 
 	for _, play := range activeGames {
-		if !isBotGame(&play) {
+		if isBotGame(&play) == isGameWithBot {
 			return play.GameKeySecret, nil
 		}
 	}
 
-	return activeGames[0].GameKeySecret, nil
+	return "", fmt.Errorf("no active game found for user %s with isBotGame=%v", userID, isGameWithBot)
 }
 
 func (g *GameUseCase) GetArchiveOfGames(ctx context.Context, pageNumber, year int, name string) (*game.ArchiveResponse, error) {
