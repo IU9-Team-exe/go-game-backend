@@ -19,7 +19,7 @@ import (
 	"strings"
 	"team_exe/internal/bootstrap"
 	"team_exe/internal/domain/game"
-	"team_exe/internal/domain/user"
+	errs "team_exe/internal/errors"
 	"team_exe/internal/statuses"
 	"time"
 )
@@ -42,13 +42,16 @@ func NewGameRepository(cfg bootstrap.Config, log *zap.SugaredLogger, redis *redi
 	}
 }
 
-func (g *GameRepository) GenerateGameKeys(ctx context.Context) (gameKeySecret string, gameKeyPublic string) {
+func (g *GameRepository) GenerateGameKeys(ctx context.Context) (gameKeySecret string, gameKeyPublic string, err error) {
 	gameKeySecret = uuid.New().String()
 	for {
 		gameKeyPublic = generateHash(gameKeySecret)
-
-		if g.CheckPublicKeyIsUniq(ctx, gameKeyPublic) {
-			return gameKeySecret, gameKeyPublic
+		isPublicKeyUniq, err := g.CheckPublicKeyIsUniq(ctx, gameKeyPublic)
+		if err != nil {
+			return "", "", fmt.Errorf("%w: generate key uniqueness check failed: %v", errs.ErrGameKeyGeneration, err)
+		}
+		if isPublicKeyUniq {
+			return gameKeySecret, gameKeyPublic, nil
 		}
 	}
 }
@@ -62,7 +65,7 @@ func generateHash(s string) string {
 	return fmt.Sprintf("%05d", code)
 }
 
-func (g *GameRepository) CheckPublicKeyIsUniq(ctx context.Context, gameKeyPublic string) bool {
+func (g *GameRepository) CheckPublicKeyIsUniq(ctx context.Context, gameKeyPublic string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	collection := g.mongo.Collection("games")
@@ -70,13 +73,18 @@ func (g *GameRepository) CheckPublicKeyIsUniq(ctx context.Context, gameKeyPublic
 		"game_key_public": gameKeyPublic,
 	}
 	err := collection.FindOne(ctx, filter).Err()
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return true
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return true, nil
+		} else {
+			return false, fmt.Errorf("%w: %v", errs.ErrCheckKeyUniq, err)
+		}
 	}
-	return false
+
+	return false, nil
 }
 
-func (g *GameRepository) PutGameToMongoDatabase(ctx context.Context, gameData game.Game) bool {
+func (g *GameRepository) InsertGame(ctx context.Context, gameData game.Game) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -84,13 +92,12 @@ func (g *GameRepository) PutGameToMongoDatabase(ctx context.Context, gameData ga
 
 	_, err := collection.InsertOne(ctx, gameData)
 	if err != nil {
-		g.log.Errorf("failed to insert game to database: %v", err)
-		return false
+		return fmt.Errorf("%w: insert game %s failed: %v", errs.ErrGameInsert, gameData.GameKeySecret, err)
 	}
 
 	g.log.Infof("game inserted successfully with key: %s", gameData.GameKeySecret)
 
-	return true
+	return nil
 }
 
 func (g *GameRepository) AddPlayer(ctx context.Context, updatedGame *game.Game) error {
@@ -111,10 +118,10 @@ func (g *GameRepository) AddPlayer(ctx context.Context, updatedGame *game.Game) 
 
 	res, err := coll.UpdateOne(ctx, filter, update)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errs.ErrAddPlayer, err)
 	}
 	if res.MatchedCount == 0 {
-		return mongo.ErrNoDocuments
+		return fmt.Errorf("%w: %s", errs.ErrGameNotFound, updatedGame.GameKeySecret)
 	}
 	return nil
 }
@@ -126,7 +133,7 @@ func (g *GameRepository) DetermineFreeColor(play *game.Game) (string, error) {
 	if play.PlayerWhite == "" {
 		return "white", nil
 	}
-	return "", errors.New("both player slots are already occupied")
+	return "", fmt.Errorf("%w: both player slots are occupied", errs.ErrNoFreeColor)
 }
 
 func (g *GameRepository) GetGameByPublicKey(ctx context.Context, gameKeyPublic string) (*game.Game, error) {
@@ -150,23 +157,20 @@ func (g *GameRepository) GetGameByPublicKey(ctx context.Context, gameKeyPublic s
 
 	err := collection.FindOne(ctx, filter).Decode(&foundGame)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		return &foundGame, nil
-	} else if err != nil {
-		g.log.Error(err)
-		return &foundGame, err
+		return nil, fmt.Errorf("%w: public key %s", errs.ErrGameNotFound, gameKeyPublic)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errs.ErrGameLookup, err)
 	}
 
 	return &foundGame, nil
 }
 
-func (g *GameRepository) GetUserByID(ctx context.Context, userID string) (user.User, error) {
+/*func (g *GameRepository) GetUserByID(ctx context.Context, userID string) (user.User, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	idStr := "67e66998ecd55bbca68bc38b"
-
-	// конвертируем её в ObjectID
-	userIdObj, err := primitive.ObjectIDFromHex(idStr)
+	userIdObj, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return user.User{}, err
 	}
@@ -185,7 +189,7 @@ func (g *GameRepository) GetUserByID(ctx context.Context, userID string) (user.U
 	}
 
 	return result, nil
-}
+}*/
 
 func (g *GameRepository) LeaveGameBySecretKey(ctx context.Context, secretKey string, userID string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -199,11 +203,10 @@ func (g *GameRepository) LeaveGameBySecretKey(ctx context.Context, secretKey str
 	var foundGame game.Game
 	err := collection.FindOne(ctx, filter).Decode(&foundGame)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		return fmt.Errorf("игры с id %s не найдено", secretKey)
+		return fmt.Errorf("%w: %s", errs.ErrGameNotFound, secretKey)
 	}
 	if err != nil {
-		g.log.Error("ошибка при поиске игры:", err)
-		return err
+		return fmt.Errorf("%w: %v", errs.ErrLeaveGame, err)
 	}
 	updateFields := bson.M{}
 	if foundGame.PlayerBlack == userID {
@@ -220,44 +223,39 @@ func (g *GameRepository) LeaveGameBySecretKey(ctx context.Context, secretKey str
 			bson.M{"$set": updateFields},
 		)
 		if err != nil {
-			g.log.Error("ошибка при апдейте игры:", err)
-			return err
+			return fmt.Errorf("%w: %v", errs.ErrLeaveGame, err)
 		}
 	}
 
 	return nil
 }
 
-func (g *GameRepository) CalculateUserColor(ctx context.Context, gameKey string, userID string) string {
+func (g *GameRepository) CalculateUserColor(ctx context.Context, gameKey string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	collection := g.mongo.Collection("games")
+	var play game.Game
+	err := g.mongo.Collection("games").
+		FindOne(ctx, bson.M{"game_key": gameKey}).
+		Decode(&play)
 
-	filter := bson.M{"game_key": gameKey}
-
-	var foundGame game.Game
-	err := collection.FindOne(ctx, filter).Decode(&foundGame)
-
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return "", fmt.Errorf("%w: %s", errs.ErrGameNotFound, gameKey)
+	}
 	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			g.log.Error("игра с ID %s не найдена", gameKey)
-		}
-		return ""
+		return "", fmt.Errorf("find game %s: %w", gameKey, err)
 	}
 
-	if foundGame.PlayerBlack != "" {
-		return "white"
+	if play.PlayerBlack != "" {
+		return "white", nil
 	}
-	return "black"
+	return "black", nil
 }
 
 func (g *GameRepository) GetGameByGameKey(ctx context.Context, gameKey string) (*game.Game, error) {
-	// 1) Таймаут
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	// 2) Пытаемся найти в “живых” играх
 	var live game.Game
 	err := g.mongo.Collection("games").
 		FindOne(ctx, bson.M{"game_key": gameKey}).
@@ -265,25 +263,27 @@ func (g *GameRepository) GetGameByGameKey(ctx context.Context, gameKey string) (
 	if err == nil {
 		return &live, nil
 	}
-	if err != mongo.ErrNoDocuments {
-		// реальная ошибка Mongo
-		return nil, err
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("%w: %s", errs.ErrGameNotFound, gameKey)
+	} else if err != nil {
+		return nil, fmt.Errorf("%w: %v", errs.ErrGameLookup, err)
 	}
 
-	// 3) Не нашли в games — проверяем, валидна ли строка как ObjectID
 	oid, err := primitive.ObjectIDFromHex(gameKey)
 	if err != nil {
-		// невалидный hex — дальше искать бесполезно
-		return nil, mongo.ErrNoDocuments
+		return nil, fmt.Errorf("%w: %s", errs.ErrInvalidGameKey, gameKey)
 	}
 
-	// 4) Ищем в архиве
 	var archived game.GameFromArchive
 	err = g.mongo.Collection("archive").
 		FindOne(ctx, bson.M{"_id": oid}).
 		Decode(&archived)
+
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("%w: %s", errs.ErrGameArchiveNotFound, gameKey)
+	}
 	if err != nil {
-		return nil, err // ErrNoDocuments или другая ошибка
+		return nil, fmt.Errorf("%w: %v", errs.ErrGameArchiveLookup, err)
 	}
 
 	mapped := game.Game{
@@ -300,14 +300,19 @@ func (g *GameRepository) GetGameByGameKey(ctx context.Context, gameKey string) (
 	return &mapped, nil
 }
 
-func (g *GameRepository) SaveSGFToRedis(key string, sgfText string) error {
-	ctx := context.Background()
+func (g *GameRepository) SaveSGFToRedis(ctx context.Context, key string, sgfText string) error {
 	return g.redis.Set(ctx, key, sgfText, 0).Err()
 }
 
-func (g *GameRepository) LoadSGFFromRedis(key string) (string, error) {
-	ctx := context.Background()
-	return g.redis.Get(ctx, key).Result()
+func (g *GameRepository) LoadSGFFromRedis(ctx context.Context, key string) (string, error) {
+	val, err := g.redis.Get(ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", fmt.Errorf("%w: %s", errs.ErrSGFNotFound, key)
+	}
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", errs.ErrRedis, err)
+	}
+	return val, nil
 }
 
 func (g *GameRepository) ParseSGF(sgfText string) (*game.Game, error) {
@@ -394,8 +399,7 @@ func (g *GameRepository) GetAllActiveGames() ([]game.Game, error) {
 	var result []game.Game
 	cursor, err := collection.Find(ctx, filter)
 	if err != nil {
-		g.log.Error(err)
-		return result, err
+		return nil, fmt.Errorf("%w: %v", errs.ErrGetAllActiveGames, err)
 	}
 
 	defer cursor.Close(ctx)
@@ -403,8 +407,7 @@ func (g *GameRepository) GetAllActiveGames() ([]game.Game, error) {
 		var play game.Game
 		err = cursor.Decode(&play)
 		if err != nil {
-			g.log.Error(err)
-			return result, err
+			return nil, fmt.Errorf("%w: %v", errs.ErrDecodeGame, err)
 		}
 		result = append(result, play)
 	}
@@ -432,15 +435,13 @@ func (g *GameRepository) HasUserActiveGameByUserId(
 
 	cursor, err := collection.Find(ctx, filter)
 	if err != nil {
-		g.log.Error("Find active games:", err)
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errs.ErrGetAllActiveGames, err)
 	}
 	defer cursor.Close(ctx)
 
 	var games []game.Game
-	if err := cursor.All(ctx, &games); err != nil {
-		g.log.Error("Decode active games:", err)
-		return nil, err
+	if err = cursor.All(ctx, &games); err != nil {
+		return nil, fmt.Errorf("%w: %v", errs.ErrMongo, err)
 	}
 
 	return games, nil
@@ -469,11 +470,9 @@ func (g *GameRepository) GetActiveGameByUserId(ctx context.Context, userID strin
 	play := game.Game{}
 	err := collection.FindOne(ctx, filter).Decode(&play)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		g.log.Error(fmt.Errorf("No active game found for user %s", userID))
-		return play, fmt.Errorf("No active game found for user %s", userID)
+		return play, fmt.Errorf("%s for user with id %s", errs.ErrGameNotFound, userID)
 	} else if err != nil {
-		g.log.Error(err)
-		return play, err
+		return play, fmt.Errorf("%s", errs.ErrMongo)
 	}
 
 	return play, nil
@@ -529,7 +528,7 @@ func (g *GameRepository) FetchGames(ctx context.Context, pageNum int, filter bso
 
 	total, err := coll.CountDocuments(ctx, filter)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("%w: %v", errs.ErrArchiveCount, err)
 	}
 
 	opts := options.Find().
@@ -539,19 +538,15 @@ func (g *GameRepository) FetchGames(ctx context.Context, pageNum int, filter bso
 
 	cursor, err := coll.Find(ctx, filter, opts)
 	if err != nil {
-		fmt.Println(err)
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("%w: %v", errs.ErrArchiveFetch, err)
 	}
 	defer cursor.Close(ctx)
 
 	var games []game.GameFromArchive
 	err = cursor.All(ctx, &games)
 	if err != nil {
-		fmt.Println(err)
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("%w: %v", errs.ErrArchiveDecode, err)
 	}
-
-	fmt.Println(len(games))
 
 	return games, int(total), nil
 }
@@ -578,7 +573,7 @@ func (g *GameRepository) GetArchiveYears(ctx context.Context) (*game.ArchiveYear
 
 	cursor, err := coll.Aggregate(ctx, pipeline)
 	if err != nil {
-		return nil, fmt.Errorf("aggregate error: %w", err)
+		return nil, fmt.Errorf("%w: %v", errs.ErrArchiveAggregate, err)
 	}
 	defer cursor.Close(ctx)
 
@@ -588,7 +583,7 @@ func (g *GameRepository) GetArchiveYears(ctx context.Context) (*game.ArchiveYear
 	}
 
 	if err := cursor.All(ctx, &rawResult); err != nil {
-		return nil, fmt.Errorf("cursor decoding error: %w", err)
+		return nil, fmt.Errorf("%w: %v", errs.ErrArchiveAggregateDecode, err)
 	}
 
 	response := &game.ArchiveYearsResponse{
@@ -628,7 +623,7 @@ func (g *GameRepository) GetArchiveNames(ctx context.Context, pageNum int) (*gam
 
 	cursor, err := coll.Aggregate(ctx, mainPipeline)
 	if err != nil {
-		return nil, fmt.Errorf("aggregate error: %w", err)
+		return nil, fmt.Errorf("%w: %v", errs.ErrArchiveAggregate, err)
 	}
 	defer cursor.Close(ctx)
 
@@ -638,7 +633,7 @@ func (g *GameRepository) GetArchiveNames(ctx context.Context, pageNum int) (*gam
 	}
 
 	if err := cursor.All(ctx, &rawResult); err != nil {
-		return nil, fmt.Errorf("cursor decoding error: %w", err)
+		return nil, fmt.Errorf("%w: %v", errs.ErrArchiveAggregateDecode, err)
 	}
 
 	countPipeline := mongo.Pipeline{
@@ -654,7 +649,7 @@ func (g *GameRepository) GetArchiveNames(ctx context.Context, pageNum int) (*gam
 
 	countCursor, err := coll.Aggregate(ctx, countPipeline)
 	if err != nil {
-		return nil, fmt.Errorf("count aggregate error: %w", err)
+		return nil, fmt.Errorf("%w: %v", errs.ErrArchiveAggregate, err)
 	}
 	defer countCursor.Close(ctx)
 
@@ -663,7 +658,7 @@ func (g *GameRepository) GetArchiveNames(ctx context.Context, pageNum int) (*gam
 	}
 
 	if err := countCursor.All(ctx, &countResult); err != nil {
-		return nil, fmt.Errorf("count decode error: %w", err)
+		return nil, fmt.Errorf("%w: %v", errs.ErrArchiveAggregateDecode, err)
 	}
 
 	total := 0
@@ -697,8 +692,7 @@ func (g *GameRepository) GetGameFromArchiveById(ctx context.Context, gameFromArc
 
 	objectID, err := primitive.ObjectIDFromHex(gameFromArchiveById)
 	if err != nil {
-		g.log.Error("Invalid ObjectID:", err)
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errs.ErrInvalidArchiveID, err)
 	}
 
 	filter := bson.M{
@@ -709,10 +703,10 @@ func (g *GameRepository) GetGameFromArchiveById(ctx context.Context, gameFromArc
 
 	err = collection.FindOne(ctx, filter).Decode(&foundGame)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		return foundGame, nil
-	} else if err != nil {
-		g.log.Error(err)
-		return foundGame, err
+		return nil, fmt.Errorf("%w: %s", errs.ErrArchiveNotFound, gameFromArchiveById)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errs.ErrGetArchiveByID, err)
 	}
 
 	return foundGame, nil
@@ -732,11 +726,15 @@ func (g *GameRepository) CompleteGame(ctx context.Context, secretKey, finalSgf s
 		}},
 	)
 	if err != nil {
-		g.log.Errorf("failed to mark game completed: %v", err)
+		return fmt.Errorf("%w: %v", errs.ErrCompleteGame, err)
 	}
 
-	_ = g.redis.Del(context.Background(), secretKey).Err()
-	return err
+	err = g.redis.Del(context.Background(), secretKey).Err()
+	if err != nil {
+		return fmt.Errorf("%w: %v", errs.ErrRedisDel, err)
+	}
+
+	return nil
 }
 
 func (g *GameRepository) SaveSGFToMongo(ctx context.Context, secretKey, sgfText string) error {
@@ -747,7 +745,12 @@ func (g *GameRepository) SaveSGFToMongo(ctx context.Context, secretKey, sgfText 
 			bson.M{"game_key": secretKey},
 			bson.M{"$set": bson.M{"sgf": sgfText}},
 		)
-	return err
+
+	if err != nil {
+		return fmt.Errorf("%w: %v", errs.ErrSaveSGF, err)
+	}
+
+	return nil
 }
 
 func (g *GameRepository) SaveMovesToMongo(ctx context.Context, secretKey string, moves []game.Move) error {
@@ -759,5 +762,10 @@ func (g *GameRepository) SaveMovesToMongo(ctx context.Context, secretKey string,
 		bson.M{"game_key": secretKey},
 		bson.M{"$set": bson.M{"moves": moves}},
 	)
-	return err
+
+	if err != nil {
+		return fmt.Errorf("%w: %v", errs.ErrSaveMoves, err)
+	}
+
+	return nil
 }

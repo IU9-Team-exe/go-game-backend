@@ -207,8 +207,10 @@ func (g *GameHandler) HandleLeaveGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	gameKey := r.URL.Query().Get("gameKey")
+
 	ctx := r.Context()
-	ok, err := g.gameUC.LeaveGame(ctx, userID)
+	ok, err := g.gameUC.LeaveGame(ctx, userID, gameKey)
 	if err != nil || !ok {
 		g.log.Error(err)
 		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
