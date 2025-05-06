@@ -166,31 +166,6 @@ func (g *GameRepository) GetGameByPublicKey(ctx context.Context, gameKeyPublic s
 	return &foundGame, nil
 }
 
-/*func (g *GameRepository) GetUserByID(ctx context.Context, userID string) (user.User, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	userIdObj, err := primitive.ObjectIDFromHex(userID)
-	if err != nil {
-		return user.User{}, err
-	}
-
-	filter := bson.M{"_id": userIdObj}
-	collection := g.mongo.Collection("users")
-
-	var result user.User
-	err = collection.FindOne(ctx, filter).Decode(&result)
-
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			g.log.Errorf("юзер с ID %s не найден", userID)
-			return user.User{}, fmt.Errorf("user with id %s not found", userID)
-		}
-	}
-
-	return result, nil
-}*/
-
 func (g *GameRepository) LeaveGameBySecretKey(ctx context.Context, secretKey string, userID string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

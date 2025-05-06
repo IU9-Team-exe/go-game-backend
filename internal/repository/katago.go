@@ -10,6 +10,7 @@ import (
 	"team_exe/internal/adapters"
 	"team_exe/internal/bootstrap"
 	"team_exe/internal/domain/game"
+	errs "team_exe/internal/errors"
 )
 
 type KatagoStorage struct {
@@ -40,12 +41,12 @@ func (k *KatagoStorage) SendRequestToKatago(ctx context.Context, gameUniqID stri
 
 	reqBody, err := json.Marshal(katagoReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal katago request: %w", err)
+		return nil, fmt.Errorf("%w: %w", errs.ErrMarshal, err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, k.cfg.KatagoBotUrl, bytes.NewBuffer(reqBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create katago request: %w", err)
+		return nil, fmt.Errorf("%w: %w", errs.ErrSendRequest, err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")

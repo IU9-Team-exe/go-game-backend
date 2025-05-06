@@ -34,7 +34,8 @@ type LoginRequest struct {
 }
 
 type UserFindRequest struct {
-	UserID string `json:"user_id"`
+	UserID   string `json:"user_id,omitempty"`
+	Username string `json:"username,omitempty"`
 }
 
 func NewAuthHandler(redis *adapters.AdapterRedis, mongo *adapters.AdapterMongo, log *zap.SugaredLogger) *AuthHandler {
@@ -60,38 +61,36 @@ func NewAuthHandler(redis *adapters.AdapterRedis, mongo *adapters.AdapterMongo, 
 // @Router       /register [post]
 func (a *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		a.log.Error("Register: only POST method is allowed")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
+		a.log.Error("Register: only POST allowed")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST allowed")
 		return
 	}
 
-	requestBody, err := utils.ReadRequestBody(r)
+	body, err := utils.ReadRequestBody(r)
 	if err != nil {
-		a.log.Error("Register: failed to read request body: ", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
-			httpresponse.ErrorResponse{ErrorDescription: "Failed to read request body"})
+		a.log.Error("Register: read body failed:", err)
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_request", "Failed to read request body")
 		return
 	}
 
-	var registerData RegisterRequest
-	if err := json.Unmarshal(requestBody, &registerData); err != nil {
-		a.log.Error("Register: malformed JSON: ", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
-			httpresponse.ErrorResponse{ErrorDescription: httpresponse.MALFORMEDJSON_errorDesc})
+	var req RegisterRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		a.log.Error("Register: malformed JSON:", err)
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_json", httpresponse.MALFORMEDJSON_errorDesc)
 		return
 	}
 
-	sessionID, err := a.UsecaseHandler.RegisterUser(registerData.Username, registerData.Email, registerData.Password)
+	sessionID, err := a.UsecaseHandler.RegisterUser(req.Username, req.Email, req.Password)
 	if err != nil {
+		// map domain error → HTTP
 		if errors.Is(err, errs.ErrUserExists) {
-			a.log.Errorf("Register: user already exists: %s", registerData.Username)
-			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
-				httpresponse.ErrorResponse{ErrorDescription: "Пользователь с таким именем уже существует"})
+			a.log.Warnf("Register: user exists: %s", req.Username)
+			httpresponse.WriteAPIError(w, http.StatusConflict, "user_already_exists", "Пользователь с таким именем уже существует")
 			return
 		}
-		a.log.Error("Register: internal error: ", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError,
-			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
+		status, code := errs.TranslateErr(err)
+		a.log.Error("Register: internal error:", err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
 
@@ -99,7 +98,6 @@ func (a *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Name:     "sessionID",
 		Value:    sessionID,
 		Expires:  time.Now().Add(10 * time.Hour),
-		Secure:   false,
 		HttpOnly: true,
 	})
 
@@ -119,53 +117,37 @@ func (a *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 // @Router       /login [post]
 func (a *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		a.log.Error("Login: only POST method is allowed")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
+		a.log.Error("Login: only POST allowed")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST allowed")
 		return
 	}
 
-	requestBody, err := utils.ReadRequestBody(r)
+	body, err := utils.ReadRequestBody(r)
 	if err != nil {
-		a.log.Error("Login: failed to read request body: ", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
-			httpresponse.ErrorResponse{ErrorDescription: "Failed to read request body"})
+		a.log.Error("Login: read body failed:", err)
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_request", "Failed to read request body")
 		return
 	}
 
-	var loginData LoginRequest
-	if err := json.Unmarshal(requestBody, &loginData); err != nil {
-		a.log.Error("Login: malformed JSON: ", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
-			httpresponse.ErrorResponse{ErrorDescription: httpresponse.MALFORMEDJSON_errorDesc})
+	var req LoginRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		a.log.Error("Login: malformed JSON:", err)
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_json", httpresponse.MALFORMEDJSON_errorDesc)
 		return
 	}
 
-	sessionID, err := a.UsecaseHandler.LoginUser(loginData.Username, loginData.Password)
+	sessionID, err := a.UsecaseHandler.LoginUser(req.Username, req.Password)
 	if err != nil {
-		switch {
-		case errors.Is(err, errs.ErrUserNotFound):
-			a.log.Errorf("Login: user not found: %s", loginData.Username)
-			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
-				httpresponse.ErrorResponse{ErrorDescription: "Пользователь не найден"})
-			return
-		case errors.Is(err, errs.ErrWrongPassword):
-			a.log.Errorf("Login: wrong password for user: %s", loginData.Username)
-			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
-				httpresponse.ErrorResponse{ErrorDescription: "Неверный пароль"})
-			return
-		default:
-			a.log.Error("Login: internal error: ", err)
-			httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError,
-				httpresponse.ErrorResponse{ErrorDescription: err.Error()})
-			return
-		}
+		status, code := errs.TranslateErr(err)
+		a.log.Warnf("Login: %v", err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
+		return
 	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "sessionID",
 		Value:    sessionID,
 		Expires:  time.Now().Add(10 * time.Hour),
-		Secure:   false, // TODO
 		HttpOnly: true,
 	})
 
@@ -183,29 +165,27 @@ func (a *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 // @Router       /logout [post]
 func (a *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		a.log.Error("Logout: only POST method is allowed")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
+		a.log.Error("Logout: only POST allowed")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST allowed")
 		return
 	}
 
-	sessionCookie, err := r.Cookie("sessionID")
+	cookie, err := r.Cookie("sessionID")
 	if err != nil {
 		if errors.Is(err, http.ErrNoCookie) {
-			a.log.Warn("Logout: no cookie provided")
-			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
-				httpresponse.ErrorResponse{ErrorDescription: http.ErrNoCookie.Error()})
+			a.log.Warn("Logout: no sessionID cookie")
+			httpresponse.WriteAPIError(w, http.StatusBadRequest, "missing_cookie", "sessionID cookie is required")
 			return
 		}
-		a.log.Error("Logout: error retrieving cookie: ", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
-			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
+		a.log.Error("Logout: cookie error:", err)
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 
-	if err := a.UsecaseHandler.LogoutUser(sessionCookie.Value); err != nil {
-		a.log.Errorf("Logout: failed to logout sessionID=%s: %v", sessionCookie.Value, err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
-			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
+	if err := a.UsecaseHandler.LogoutUser(cookie.Value); err != nil {
+		status, code := errs.TranslateErr(err)
+		a.log.Error("Logout: failed:", err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
 
@@ -215,31 +195,23 @@ func (a *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 // GetUserID возвращает из сессии идентификатор пользователя.
 // Если сессия просрочена или не найдена, пишет ошибку в http-ответ и возвращает "".
 func (a *AuthHandler) GetUserID(w http.ResponseWriter, r *http.Request) string {
-	sessionCookie, err := r.Cookie("sessionID")
+	cookie, err := r.Cookie("sessionID")
 	if err != nil {
 		if errors.Is(err, http.ErrNoCookie) {
-			a.log.Warn("GetUserID: no sessionID cookie")
-			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
-				httpresponse.ErrorResponse{ErrorDescription: "Не найдена cookie sessionID"})
+			a.log.Warn("GetUserID: missing cookie")
+			httpresponse.WriteAPIError(w, http.StatusBadRequest, "missing_cookie", "sessionID cookie is required")
 			return ""
 		}
-		a.log.Error("GetUserID: error retrieving cookie: ", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest,
-			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
+		a.log.Error("GetUserID: cookie error:", err)
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return ""
 	}
 
-	userID, err := a.UsecaseHandler.GetUserIdFromSession(sessionCookie.Value)
+	userID, err := a.UsecaseHandler.GetUserIdFromSession(cookie.Value)
 	if err != nil {
-		if errors.Is(err, errs.ErrSessionNotFound) {
-			a.log.Warn("GetUserID: session not found or expired")
-			httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized,
-				httpresponse.ErrorResponse{ErrorDescription: "Сессия не найдена или истекла"})
-			return ""
-		}
-		a.log.Error("GetUserID: internal error: ", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError,
-			httpresponse.ErrorResponse{ErrorDescription: err.Error()})
+		status, code := errs.TranslateErr(err)
+		a.log.Warn("GetUserID: session lookup failed:", err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return ""
 	}
 
@@ -260,37 +232,72 @@ func (a *AuthHandler) GetUserID(w http.ResponseWriter, r *http.Request) string {
 // @Router       /getUserById [post]
 func (a *AuthHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		a.log.Error("GetUserByID: only POST method is allowed")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
+		a.log.Error("GetUserByID: only POST allowed")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST allowed")
 		return
 	}
 
-	sessionCookie, err := r.Cookie("sessionID")
-	if err != nil {
-		a.log.Error("GetUserByID: cookie error: ", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	ctx := r.Context()
-
-	if !a.UsecaseHandler.CheckAuthorized(ctx, sessionCookie.Value) {
-		a.log.Warn("GetUserByID: unauthorized access attempt")
-		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "User is not authorized")
+	userID := a.GetUserID(w, r)
+	if userID == "" {
+		// GetUserID has already written the error response
 		return
 	}
 
 	var req UserFindRequest
 	if err := utils.DecodeJSONRequest(r, &req); err != nil {
-		a.log.Error("GetUserByID: JSON decode error: ", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		a.log.Error("GetUserByID: JSON decode failed:", err)
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_json", err.Error())
 		return
 	}
 
-	user, err := a.UsecaseHandler.GetUserByUserId(ctx, req.UserID)
+	user, err := a.UsecaseHandler.GetUserByUserId(r.Context(), req.UserID)
 	if err != nil {
-		a.log.Errorf("GetUserByID: error retrieving user by ID %s: %v", req.UserID, err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		status, code := errs.TranslateErr(err)
+		a.log.Errorf("GetUserByID: lookup failed for %s: %v", req.UserID, err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
+		return
+	}
+
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, user)
+}
+
+// GetUserByUsername godoc
+// @Summary      Получить данные пользователя
+// @Description  Возвращает пользователя по его username. Требуется авторизация по cookie.
+// @Tags         user
+// @Security     ApiKeyAuth
+// @Accept       json
+// @Produce      json
+// @Param        payload  body      UserFindRequest            true  "username пользователя"
+// @Success      200      {object}  user.User
+// @Failure      400      {object}  httpresponse.Response      "Некорректный JSON или пользователь не найден"
+// @Failure      401      {object}  httpresponse.Response      "Пользователь не авторизован"
+// @Router       /getUserByUsername [post]
+func (a *AuthHandler) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		a.log.Error("GetUserByID: only POST allowed")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST allowed")
+		return
+	}
+
+	userID := a.GetUserID(w, r)
+	if userID == "" {
+		// GetUserID has already written the error response
+		return
+	}
+
+	var req UserFindRequest
+	if err := utils.DecodeJSONRequest(r, &req); err != nil {
+		a.log.Error("GetUserByID: JSON decode failed:", err)
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_json", err.Error())
+		return
+	}
+
+	user, err := a.UsecaseHandler.GetUserByUsername(r.Context(), req.Username)
+	if err != nil {
+		status, code := errs.TranslateErr(err)
+		a.log.Errorf("GetUserByID: lookup failed for %s: %v", req.UserID, err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
 

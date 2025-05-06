@@ -1,11 +1,9 @@
 package game
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"sync"
@@ -14,7 +12,6 @@ import (
 	"team_exe/internal/delivery/auth"
 	"team_exe/internal/domain/game"
 	errs "team_exe/internal/errors"
-	myErrors "team_exe/internal/errors"
 	"team_exe/internal/httpresponse"
 	repo "team_exe/internal/repository"
 	gameuc "team_exe/internal/usecase/game"
@@ -95,25 +92,27 @@ func (h *GameHandler) HandleGetGameByPublicKey(w http.ResponseWriter, r *http.Re
 	var req game.GetGameInfoRequest
 	if err := utils.DecodeJSONRequest(r, &req); err != nil {
 		h.log.Error("DecodeJSONRequest:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_json", err.Error())
 		return
 	}
 
-	resp, err := h.gameUC.GetGameByPublicKey(r.Context(), req.GamePublicKey)
-	if err != nil {
-		h.log.Error("GetGameByPublicKey:", err)
+	ctx := r.Context()
 
-		secResp, err := h.gameUC.GetGameBySecreteKey(r.Context(), req.GamePublicKey)
-		if err != nil {
-			httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, err.Error())
+	play, err := h.gameUC.GetGameByPublicKey(ctx, req.GamePublicKey)
+	if err != nil {
+		// вдруг клиент прислал secret key
+		if alt, altErr := h.gameUC.GetGameBySecreteKey(ctx, req.GamePublicKey); altErr == nil {
+			httpresponse.WriteResponseWithStatus(w, http.StatusOK, alt)
 			return
 		}
 
-		httpresponse.WriteResponseWithStatus(w, http.StatusOK, secResp)
+		h.log.Error("GetGameByPublicKey:", err)
+		status, code := errs.TranslateErr(err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, play)
 }
 
 // HandleNewGame godoc
@@ -131,44 +130,43 @@ func (h *GameHandler) HandleGetGameByPublicKey(w http.ResponseWriter, r *http.Re
 func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		g.log.Error("Разрешен только метод POST")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод POST")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST allowed")
 		return
 	}
 
 	var newGameRequest game.CreateGameRequest
 	if err := utils.DecodeJSONRequest(r, &newGameRequest); err != nil {
 		g.log.Error("Ошибка декодирования JSON:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_json", err.Error())
 		return
 	}
 
-	if newGameRequest.BoardSize == 0 || newGameRequest.Komi == 0 { // TODO если по нулям, то выставляем дефолтные
-		g.log.Error("Запрос на создание игры не содержит размер доски или коми")
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Запрос не содержит размер доски или коми")
+	if newGameRequest.BoardSize == 0 || newGameRequest.Komi == 0 {
+		g.log.Error("Запрос не содержит размер доски или коми")
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "invalid_parameters", "BoardSize and Komi are required")
 		return
 	}
 
 	userID := g.authHandler.GetUserID(w, r)
 	if userID == "" {
 		g.log.Error("UserID не найден в cookie")
-		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "Unauthorized")
+		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 		return
 	}
-	//g.log.Infof("Новая игра от пользователя с id: %s", userID)
 
-	ctx := r.Context()
-
-	createdPlay, err := g.gameUC.CreateGame(ctx, newGameRequest, userID)
+	createdPlay, err := g.gameUC.CreateGame(r.Context(), newGameRequest, userID)
 	if err != nil {
-		if errors.Is(err, myErrors.ErrUserAlreadyInGame) {
+		status, code := errs.TranslateErr(err)
+		// если это ErrUserAlreadyInGame, дополняем тело данными
+		if errors.Is(err, errs.ErrUserAlreadyInGame) && createdPlay != nil {
 			resp := AlreadyInGameResponse{
-				Error:       "user already in game",
+				Error:       code,
 				CurrGameKey: createdPlay.GameKeyPublic,
 			}
-			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, resp)
+			httpresponse.WriteResponseWithStatus(w, status, resp)
 			return
 		}
-		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, err.Error())
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
 
@@ -176,10 +174,8 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 	activeGames[createdPlay.GameKeySecret] = &activeGame{Game: *createdPlay}
 	activeGamesMu.Unlock()
 
-	resp := game.GameCreateResponse{
-		PublicKey: createdPlay.GameKeyPublic,
-	}
-	g.log.Info("Новая игра создана с ключом: " + createdPlay.GameKeyPublic)
+	resp := game.GameCreateResponse{PublicKey: createdPlay.GameKeyPublic}
+	g.log.Infof("Новая игра создана с ключом: %s", createdPlay.GameKeyPublic)
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
 }
 
@@ -197,26 +193,26 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 func (g *GameHandler) HandleLeaveGame(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		g.log.Error("Разрешен только метод GET")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод GET")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only GET allowed")
 		return
 	}
 
 	userID := g.authHandler.GetUserID(w, r)
 	if userID == "" {
 		g.log.Error("UserID не найден в cookie")
+		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 		return
 	}
 
 	gameKey := r.URL.Query().Get("gameKey")
-
-	ctx := r.Context()
-	ok, err := g.gameUC.LeaveGame(ctx, userID, gameKey)
+	ok, err := g.gameUC.LeaveGame(r.Context(), userID, gameKey)
 	if err != nil || !ok {
-		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		status, code := errs.TranslateErr(err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "Пользователь успешно покинул игру")
+
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, JsonOKResponse{Text: "Left game"})
 }
 
 // HandleJoinGame godoc
@@ -233,34 +229,35 @@ func (g *GameHandler) HandleLeaveGame(w http.ResponseWriter, r *http.Request) {
 // @Router       /JoinGame [post]
 func (h *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Only POST allowed")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST allowed")
 		return
 	}
 
 	userID := h.authHandler.GetUserID(w, r)
 	if userID == "" {
-		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "Unauthorized")
+		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 		return
 	}
 
 	var req game.GameJoinRequest
 	if err := utils.DecodeJSONRequest(r, &req); err != nil {
 		h.log.Error("DecodeJSONRequest:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_json", err.Error())
 		return
 	}
 
 	joinedGame, err := h.gameUC.JoinGame(r.Context(), req.GameKeyPublic, req.Role, userID)
 	if err != nil {
-		if errors.Is(err, myErrors.ErrUserAlreadyInGame) {
+		status, code := errs.TranslateErr(err)
+		if errors.Is(err, errs.ErrUserAlreadyInGame) && joinedGame != nil {
 			resp := AlreadyInGameResponse{
-				Error:       "user already in game",
+				Error:       code,
 				CurrGameKey: joinedGame.GameKeyPublic,
 			}
-			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, resp)
+			httpresponse.WriteResponseWithStatus(w, status, resp)
 			return
 		}
-		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, err.Error())
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
 
@@ -290,36 +287,31 @@ func (h *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 func (h *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// 1) Авторизация
 	playerID := h.authHandler.GetUserID(w, r)
 	if playerID == "" {
-		h.log.Warn("HandleStartGame: unauthorized access")
-		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "Unauthorized")
+		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 		return
 	}
 
-	// 2) Параметр game_id
 	gameKey := r.URL.Query().Get("game_id")
 	if gameKey == "" {
-		h.log.Warnf("HandleStartGame: missing game_id (player %s)", playerID)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Missing game_id")
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "missing_game_id", "game_id is required")
 		return
 	}
 
-	// 3) Берём свежую игру и проверяем участника
 	freshGame, err := h.gameUC.GetGameByPublicKey(ctx, gameKey)
 	if err != nil {
-		h.log.Errorf("HandleStartGame: GetGameByPublicKey(%s) failed: %v", gameKey, err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusNotFound, err.Error())
-		return
-	}
-	if playerID != freshGame.PlayerBlack && playerID != freshGame.PlayerWhite {
-		h.log.Warnf("HandleStartGame: player %s is not in game %s", playerID, gameKey)
-		httpresponse.WriteResponseWithStatus(w, http.StatusForbidden, "Not a player")
+		status, code := errs.TranslateErr(err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
 
-	// 4) Обновляем activeGames
+	if playerID != freshGame.PlayerBlack && playerID != freshGame.PlayerWhite {
+		h.log.Warnf("HandleStartGame: player %s is not in game %s", playerID, gameKey)
+		httpresponse.WriteAPIError(w, http.StatusForbidden, "user_not_in_this_game", "You are not a participant of this game")
+		return
+	}
+
 	h.log.Infof("HandleStartGame: preparing WS for player %s game %s", playerID, gameKey)
 	activeGamesMu.Lock()
 	ag, ok := activeGames[gameKey]
@@ -352,6 +344,7 @@ func (h *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.log.Errorf("HandleStartGame: WS upgrade error for player %s game %s: %v", playerID, gameKey, err)
+
 		return
 	}
 	h.log.Infof("HandleStartGame: WS connection established for player %s game %s", playerID, gameKey)
@@ -467,47 +460,36 @@ func (h *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 // @Router       /getArchive [get]
 func (g *GameHandler) HandleGetArchivePaginator(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		g.log.Error("Разрешен только метод GET")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод GET")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only GET allowed")
 		return
 	}
 
 	userID := g.authHandler.GetUserID(w, r)
 	if userID == "" {
-		g.log.Error("UserID не найден в cookie")
+		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 		return
 	}
 
-	year := r.URL.Query().Get("year")
+	yearParam := r.URL.Query().Get("year")
 	name := r.URL.Query().Get("name")
-	page := r.URL.Query().Get("page")
+	pageParam := r.URL.Query().Get("page")
 
-	yearNum := 0
-	var err error
-	if year != "" {
-		yearNum, err = strconv.Atoi(year)
-		if err != nil {
-			g.log.Error(err)
-			httpresponse.WriteResponseWithStatus(w, 400, fmt.Errorf("ошибка преобразования года: "+err.Error()))
-			return
-		}
+	year, err := strconv.Atoi(yearParam)
+	if yearParam != "" && err != nil {
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "invalid_year", err.Error())
+		return
 	}
 
-	pageNum := 0
-	if page != "" {
-		pageNum, err = strconv.Atoi(page)
-		if err != nil {
-			g.log.Error(err)
-			httpresponse.WriteResponseWithStatus(w, 400, fmt.Errorf("ошибка преобразования номера страницы: "+err.Error()))
-			return
-		}
+	page, err := strconv.Atoi(pageParam)
+	if pageParam != "" && err != nil {
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "invalid_page", err.Error())
+		return
 	}
 
-	ctx := r.Context()
-	resp, err := g.gameUC.GetArchiveOfGames(ctx, pageNum, yearNum, name)
+	resp, err := g.gameUC.GetArchiveOfGames(r.Context(), page, year, name)
 	if err != nil {
-		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, 400, fmt.Errorf("ошибка получения архива: "+err.Error()))
+		status, code := errs.TranslateErr(err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
 
@@ -528,26 +510,20 @@ func (g *GameHandler) HandleGetArchivePaginator(w http.ResponseWriter, r *http.R
 // @Router       /getYearsInArchive [get]
 func (g *GameHandler) HandleGetYearsInArchive(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		g.log.Error("Разрешен только метод GET")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод GET")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only GET allowed")
+		return
+	}
+	if g.authHandler.GetUserID(w, r) == "" {
+		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 		return
 	}
 
-	userID := g.authHandler.GetUserID(w, r)
-	if userID == "" {
-		g.log.Error("UserID не найден в cookie")
-		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "UserID не найден в cookie")
-		return
-	}
-
-	ctx := r.Context()
-	resp, err := g.gameUC.GetListOfArchiveYears(ctx)
+	resp, err := g.gameUC.GetListOfArchiveYears(r.Context())
 	if err != nil {
-		g.log.Error("Ошибка получения годов из архива: ", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, fmt.Sprintf("ошибка получения годов из архива: %v", err))
+		status, code := errs.TranslateErr(err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
-
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
 }
 
@@ -565,34 +541,27 @@ func (g *GameHandler) HandleGetYearsInArchive(w http.ResponseWriter, r *http.Req
 // @Router       /getNamesInArchive [get]
 func (g *GameHandler) HandleGetNamesInArchive(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		g.log.Error("Разрешен только метод GET")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод GET")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only GET allowed")
+		return
+	}
+	if g.authHandler.GetUserID(w, r) == "" {
+		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 		return
 	}
 
-	userID := g.authHandler.GetUserID(w, r)
-	if userID == "" {
-		g.log.Error("UserID не найден в cookie")
-		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "UserID не найден в cookie")
+	pageParam := r.URL.Query().Get("page")
+	page, err := strconv.Atoi(pageParam)
+	if pageParam != "" && err != nil {
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "invalid_page", err.Error())
 		return
 	}
 
-	pageNum := r.URL.Query().Get("page")
-	pageNumInt, err := strconv.Atoi(pageNum)
+	resp, err := g.gameUC.GetListOfArchiveNames(r.Context(), page)
 	if err != nil {
-		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, 400, fmt.Errorf("ошибка преобразования года: "+err.Error()))
+		status, code := errs.TranslateErr(err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
-
-	ctx := r.Context()
-	resp, err := g.gameUC.GetListOfArchiveNames(ctx, pageNumInt)
-	if err != nil {
-		g.log.Error("Ошибка получения игроков из архива: ", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, fmt.Sprintf("ошибка получения игроков из архива: %v", err))
-		return
-	}
-
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
 }
 
@@ -611,45 +580,29 @@ func (g *GameHandler) HandleGetNamesInArchive(w http.ResponseWriter, r *http.Req
 // @Router       /getGameFromArchiveById [post]
 func (g *GameHandler) HandleGetGameFromArchiveById(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		g.log.Error("Разрешен только метод POST")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод POST")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST allowed")
+		return
+	}
+	if g.authHandler.GetUserID(w, r) == "" {
+		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 		return
 	}
 
-	userID := g.authHandler.GetUserID(w, r)
-	if userID == "" {
-		g.log.Error("UserID не найден в cookie")
-		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "UserID не найден в cookie")
+	var req FindGameInArchive
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_json", err.Error())
 		return
 	}
 
-	bodyBytes, err := io.ReadAll(r.Body)
+	resp, err := g.gameUC.GetGameFromArchiveById(r.Context(), req.GameId)
 	if err != nil {
-		g.log.Error("Ошибка чтения тела запроса:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Ошибка чтения тела запроса")
+		status, code := errs.TranslateErr(err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(bytes.NewReader(bodyBytes))
-	decoder.DisallowUnknownFields()
-
-	var findGameReq FindGameInArchive
-	if err = decoder.Decode(&findGameReq); err != nil {
-		g.log.Error("Ошибка декодирования JSON:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Неверный JSON: "+err.Error())
-		return
-	}
-
-	ctx := r.Context()
-	foundGame, err := g.gameUC.GetGameFromArchiveById(ctx, findGameReq.GameId)
-	if err != nil {
-		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Ошибка при получении игры: "+err.Error())
-		return
-	}
-
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, foundGame)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
 }
 
 // HandleAnalyseGame godoc
@@ -667,40 +620,33 @@ func (g *GameHandler) HandleGetGameFromArchiveById(w http.ResponseWriter, r *htt
 // @Router       /analyseCurrent [get]
 func (g *GameHandler) HandleAnalyseGame(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		g.log.Error("Разрешен только метод GET")
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Разрешен только метод GET")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only GET allowed")
 		return
 	}
-
 	userID := g.authHandler.GetUserID(w, r)
 	if userID == "" {
-		g.log.Error("UserID не найден в cookie")
-		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "Unauthorized")
+		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 		return
 	}
 
-	ctx := r.Context()
-
-	secretKey := r.URL.Query().Get("secret_key")
-	if secretKey == "" {
-		g.log.Info("Запрос на анализ игры не содержит уникальный ключ игры, будем искать в активных играх юзера")
-		foundGameSecretKey, err := g.gameUC.GetActiveGameSecretKey(ctx, userID, false)
+	secret := r.URL.Query().Get("secret_key")
+	if secret == "" {
+		var err error
+		secret, err = g.gameUC.GetActiveGameSecretKey(r.Context(), userID, false)
 		if err != nil {
-			g.log.Error(err)
-			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, "Active games not found for this user")
+			status, code := errs.TranslateErr(err)
+			httpresponse.WriteAPIError(w, status, code, err.Error())
 			return
 		}
-		secretKey = foundGameSecretKey
 	}
 
-	analyseResp, err := g.gameUC.AnalyseCurrentGame(ctx, secretKey)
+	resp, err := g.gameUC.AnalyseCurrentGame(r.Context(), secret)
 	if err != nil {
-		g.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err)
+		status, code := errs.TranslateErr(err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
-
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, analyseResp)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
 }
 
 type GenerateMoveRequest struct {
@@ -730,45 +676,35 @@ type CreateBotGameRequest struct {
 // @Router       /generateMove [post]
 func (h *GameHandler) HandleGenerateMove(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Only POST allowed")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST allowed")
+		return
+	}
+	userID := h.authHandler.GetUserID(w, r)
+	if userID == "" {
+		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 		return
 	}
 
 	var req GenerateMoveRequest
 	if err := utils.DecodeJSONRequest(r, &req); err != nil {
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_json", err.Error())
 		return
 	}
 
-	userID := h.authHandler.GetUserID(w, r)
-	if userID == "" {
-		h.log.Error("UserID не найден в cookie")
-		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "Unauthorized")
-		return
-	}
-
-	ctx := r.Context()
-
-	gameId, err := h.gameUC.GetActiveGameSecretKey(ctx, userID, true)
-	h.log.Info("Get active game: ")
+	secret, err := h.gameUC.GetActiveGameSecretKey(r.Context(), userID, true)
 	if err != nil {
-		h.log.Error(err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err)
+		status, code := errs.TranslateErr(err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
 
-	allMoves, newSgf, err := h.gameUC.GenerateMoveAgainstBot(r.Context(), gameId, req.Move)
+	moves, sgf, err := h.gameUC.GenerateMoveAgainstBot(r.Context(), secret, req.Move)
 	if err != nil {
-		h.log.Error("GenerateMoveAgainstBot:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, httpresponse.ErrorResponse{ErrorDescription: err.Error()})
+		status, code := errs.TranslateErr(err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
-
-	resp := BotGenerateMoveResponse{
-		Moves: allMoves,
-		Sgf:   newSgf,
-	}
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, BotGenerateMoveResponse{Moves: moves, Sgf: sgf})
 }
 
 // HandleNewBotGame godoc
@@ -786,19 +722,21 @@ func (h *GameHandler) HandleGenerateMove(w http.ResponseWriter, r *http.Request)
 // @Router       /newBotGame [post]
 func (h *GameHandler) HandleNewBotGame(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		httpresponse.WriteResponseWithStatus(w, http.StatusMethodNotAllowed, "Only POST allowed")
-		return
-	}
-	var req CreateBotGameRequest
-	if err := utils.DecodeJSONRequest(r, &req); err != nil {
-		httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, err.Error())
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST allowed")
 		return
 	}
 	userID := h.authHandler.GetUserID(w, r)
 	if userID == "" {
-		httpresponse.WriteResponseWithStatus(w, http.StatusUnauthorized, "Unauthorized")
+		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 		return
 	}
+
+	var req CreateBotGameRequest
+	if err := utils.DecodeJSONRequest(r, &req); err != nil {
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_json", err.Error())
+		return
+	}
+
 	gameObj, err := h.gameUC.CreateBotGame(r.Context(), game.CreateGameRequest{
 		BoardSize:      req.BoardSize,
 		Komi:           req.Komi,
@@ -806,19 +744,14 @@ func (h *GameHandler) HandleNewBotGame(w http.ResponseWriter, r *http.Request) {
 		IsCreatorBlack: req.IsCreatorBlack,
 	}, userID)
 	if err != nil {
+		status, code := errs.TranslateErr(err)
 		if errors.Is(err, errs.ErrUserAlreadyInGame) {
-			httpresponse.WriteResponseWithStatus(w, http.StatusBadRequest, map[string]string{
-				"error":      "bot game already exists",
-				"secret_key": gameObj.GameKeySecret,
-			})
+			httpresponse.WriteAPIError(w, status, code, fmt.Sprintf("bot game already exists: %s", gameObj.GameKeySecret))
 			return
 		}
-		h.log.Error("CreateBotGame:", err)
-		httpresponse.WriteResponseWithStatus(w, http.StatusInternalServerError, err.Error())
+		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, map[string]string{
-		"secret_key": gameObj.GameKeySecret,
-	})
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, map[string]string{"secret_key": gameObj.GameKeySecret})
 }

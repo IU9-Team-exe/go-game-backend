@@ -98,6 +98,7 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Post("/getGameByPublicKey", h.game.HandleGetGameByPublicKey)
 	r.Get("/leaveGame", h.game.HandleLeaveGame)
 	r.Post("/getUserById", h.auth.GetUserByID)
+	r.Post("/getUserByUsername", h.auth.GetUserByUsername)
 	r.Get("/getArchive", h.game.HandleGetArchivePaginator)
 	r.Get("/getYearsInArchive", h.game.HandleGetYearsInArchive)
 	r.Get("/getNamesInArchive", h.game.HandleGetNamesInArchive)

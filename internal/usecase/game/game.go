@@ -415,10 +415,6 @@ func (g *GameUseCase) AnalyseCurrentGame(ctx context.Context, secret string) (*g
 	)
 }
 
-// -----------------------------------------------------------------------------
-//  BOT PLAY
-// -----------------------------------------------------------------------------
-
 func (g *GameUseCase) GenerateMoveAgainstBot(ctx context.Context, secret string, userMove game.Move) ([]game.Move, string, error) {
 	old, err := g.store.LoadSGFFromRedis(ctx, secret)
 	if err != nil {

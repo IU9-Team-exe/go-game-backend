@@ -112,6 +112,47 @@ func (m *MongoUserStorage) GetUserByID(ctx context.Context, userID string) (user
 	return result, nil
 }
 
+func (m *MongoUserStorage) GetUserByUsername(ctx context.Context, username string) (user.User, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"username": username}
+	collection := m.adapter.Database.Collection("users")
+
+	var result user.User
+	if err := collection.FindOne(ctx, filter).Decode(&result); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return user.User{}, fmt.Errorf("user with nickname %s not found", username)
+		}
+		return user.User{}, err
+	}
+
+	return result, nil
+}
+
+func (m *MongoUserStorage) UpdateUserByID(ctx context.Context, userID string) (user.User, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	userObjID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return user.User{}, fmt.Errorf("invalid userID format: %w", err)
+	}
+
+	filter := bson.M{"_id": userObjID}
+	collection := m.adapter.Database.Collection("users")
+
+	var result user.User
+	if err = collection.FindOne(ctx, filter).Decode(&result); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return user.User{}, fmt.Errorf("user with id %s not found", userID)
+		}
+		return user.User{}, err
+	}
+
+	return result, nil
+}
+
 func (m *MongoUserStorage) AddLose(ctx context.Context, userID string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

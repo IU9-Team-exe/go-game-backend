@@ -55,3 +55,12 @@ func WriteInternalErrorResponse(w http.ResponseWriter) {
 	_, _ = fmt.Fprintln(w, INTERNALERRORJSON)
 	//logger.Info("response internal error", "body", INTERNALERRORJSON)
 }
+
+type APIError struct {
+	Code    string `json:"code"`    // machine‑readable
+	Message string `json:"message"` // human‑readable
+}
+
+func WriteAPIError(w http.ResponseWriter, status int, code, msg string) {
+	WriteResponseWithStatus(w, status, APIError{Code: code, Message: msg})
+}

@@ -21,6 +21,7 @@ type UserStorage interface {
 	GetUserByID(ctx context.Context, userID string) (user.User, error)
 	CreateUser(username, email, password string) (user.User, error)
 	AddLose(ctx context.Context, userID string) error
+	GetUserByUsername(ctx context.Context, username string) (user.User, error)
 }
 
 // SessionStorage описывает операции над сессиями (чтение, запись, удаление).
@@ -73,6 +74,10 @@ func (a *UserUsecaseHandler) GetUserBySessionId(ctx context.Context, sessionID s
 // GetUserByUserId возвращает пользователя по его userID.
 func (a *UserUsecaseHandler) GetUserByUserId(ctx context.Context, userID string) (user.User, error) {
 	return a.userStorage.GetUserByID(ctx, userID)
+}
+
+func (a *UserUsecaseHandler) GetUserByUsername(ctx context.Context, username string) (user.User, error) {
+	return a.userStorage.GetUserByUsername(ctx, username)
 }
 
 // LoginUser проверяет существование пользователя и правильность пароля.
