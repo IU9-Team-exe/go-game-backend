@@ -7,8 +7,9 @@ import (
 )
 
 type Response[T any] struct {
-	Status int `json:"Status"`
-	Body   any `json:"Body,omitempty"`
+	Status int    `json:"Status"`
+	Body   any    `json:"Body,omitempty"`
+	Code   string `json:"Code,omitempty"`
 }
 
 type ErrorResponse struct {
@@ -19,26 +20,29 @@ const INTERNALERRORJSON = "{\"statuses\": 500,\"body\":{\"error\": \"Internal se
 
 const MALFORMEDJSON_errorDesc = "json unmarshalling error"
 
-func WriteResponseWithStatus(w http.ResponseWriter, status int, body any) {
-	//logger := slog.With("requestID", ctx.Value("traceID"))
+func WriteResponseWithStatus(w http.ResponseWriter, status int, code string, body any) {
 	w.Header().Set("Content-Type", "application/json")
-	jsonByte, err := marshalStatusJson(status, body)
-	if err != nil {
-		WriteInternalErrorResponse(w)
-		return
+
+	w.WriteHeader(status)
+
+	resp := Response[any]{Status: status}
+	if code != "" {
+		resp.Code = code
 	}
-	_, err = w.Write(jsonByte)
-	if err != nil {
-		WriteInternalErrorResponse(w)
-		return
+	if body != nil {
+		resp.Body = body
 	}
-	//logger.Info("response", "statuses", statuses, "body", body)
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		WriteInternalErrorResponse(w)
+	}
 }
 
-func marshalStatusJson(status int, body any) ([]byte, error) {
+func marshalStatusJson(status int, code string, body any) ([]byte, error) {
 	response := Response[any]{
 		Status: status,
 		Body:   body,
+		Code:   code,
 	}
 	marshal, err := json.Marshal(response)
 	if err != nil {
@@ -57,10 +61,9 @@ func WriteInternalErrorResponse(w http.ResponseWriter) {
 }
 
 type APIError struct {
-	Code    string `json:"code"`    // machine‑readable
-	Message string `json:"message"` // human‑readable
+	Message string `json:"message"`
 }
 
 func WriteAPIError(w http.ResponseWriter, status int, code, msg string) {
-	WriteResponseWithStatus(w, status, APIError{Code: code, Message: msg})
+	WriteResponseWithStatus(w, status, code, APIError{Message: msg})
 }

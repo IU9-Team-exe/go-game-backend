@@ -101,7 +101,7 @@ func (a *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, nil)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", nil)
 }
 
 // Login godoc
@@ -151,7 +151,7 @@ func (a *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, nil)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", nil)
 }
 
 // Logout godoc
@@ -189,7 +189,7 @@ func (a *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, nil)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", nil)
 }
 
 // GetUserID возвращает из сессии идентификатор пользователя.
@@ -258,7 +258,7 @@ func (a *AuthHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, user)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", user)
 }
 
 // GetUserByUsername godoc
@@ -301,5 +301,5 @@ func (a *AuthHandler) GetUserByUsername(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, user)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", user)
 }

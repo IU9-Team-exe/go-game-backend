@@ -102,7 +102,7 @@ func (h *GameHandler) HandleGetGameByPublicKey(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		// вдруг клиент прислал secret key
 		if alt, altErr := h.gameUC.GetGameBySecreteKey(ctx, req.GamePublicKey); altErr == nil {
-			httpresponse.WriteResponseWithStatus(w, http.StatusOK, alt)
+			httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", alt)
 			return
 		}
 
@@ -112,7 +112,7 @@ func (h *GameHandler) HandleGetGameByPublicKey(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, play)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", play)
 }
 
 // HandleNewGame godoc
@@ -163,7 +163,7 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 				Error:       code,
 				CurrGameKey: createdPlay.GameKeyPublic,
 			}
-			httpresponse.WriteResponseWithStatus(w, status, resp)
+			httpresponse.WriteResponseWithStatus(w, status, code, resp)
 			return
 		}
 		httpresponse.WriteAPIError(w, status, code, err.Error())
@@ -176,7 +176,7 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 
 	resp := game.GameCreateResponse{PublicKey: createdPlay.GameKeyPublic}
 	g.log.Infof("Новая игра создана с ключом: %s", createdPlay.GameKeyPublic)
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", resp)
 }
 
 // HandleLeaveGame godoc
@@ -212,7 +212,7 @@ func (g *GameHandler) HandleLeaveGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, JsonOKResponse{Text: "Left game"})
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", JsonOKResponse{Text: "Left game"})
 }
 
 // HandleJoinGame godoc
@@ -254,7 +254,7 @@ func (h *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 				Error:       code,
 				CurrGameKey: joinedGame.GameKeyPublic,
 			}
-			httpresponse.WriteResponseWithStatus(w, status, resp)
+			httpresponse.WriteResponseWithStatus(w, status, code, resp)
 			return
 		}
 		httpresponse.WriteAPIError(w, status, code, err.Error())
@@ -269,7 +269,7 @@ func (h *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 	}
 	activeGamesMu.Unlock()
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, JsonOKResponse{Text: "Joined"})
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", JsonOKResponse{Text: "Joined"})
 }
 
 // HandleStartGame godoc
@@ -525,7 +525,7 @@ func (g *GameHandler) HandleGetArchivePaginator(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", resp)
 }
 
 // HandleGetYearsInArchive godoc
@@ -556,7 +556,7 @@ func (g *GameHandler) HandleGetYearsInArchive(w http.ResponseWriter, r *http.Req
 		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", resp)
 }
 
 // HandleGetNamesInArchive godoc
@@ -594,7 +594,7 @@ func (g *GameHandler) HandleGetNamesInArchive(w http.ResponseWriter, r *http.Req
 		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", resp)
 }
 
 // HandleGetGameFromArchiveById godoc
@@ -634,7 +634,7 @@ func (g *GameHandler) HandleGetGameFromArchiveById(w http.ResponseWriter, r *htt
 		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", resp)
 }
 
 // HandleAnalyseGame godoc
@@ -678,7 +678,7 @@ func (g *GameHandler) HandleAnalyseGame(w http.ResponseWriter, r *http.Request) 
 		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", resp)
 }
 
 type GenerateMoveRequest struct {
@@ -736,7 +736,7 @@ func (h *GameHandler) HandleGenerateMove(w http.ResponseWriter, r *http.Request)
 		httpresponse.WriteAPIError(w, status, code, err.Error())
 		return
 	}
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, BotGenerateMoveResponse{Moves: moves, Sgf: sgf})
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", BotGenerateMoveResponse{Moves: moves, Sgf: sgf})
 }
 
 // HandleNewBotGame godoc
@@ -785,5 +785,5 @@ func (h *GameHandler) HandleNewBotGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, map[string]string{"secret_key": gameObj.GameKeySecret})
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", map[string]string{"secret_key": gameObj.GameKeySecret})
 }
