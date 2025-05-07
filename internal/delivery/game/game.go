@@ -368,13 +368,32 @@ func (h *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 	// 8) Сохраняем новый conn под защитой мьютекса
 	activeGamesMu.Lock()
 	*slotPtr = conn
+	opponentID := ""
 	// Захватим свежего оппонента
 	var opponentWS *websocket.Conn
 	if playerID == ag.Game.PlayerBlack {
 		opponentWS = ag.whiteWS
+		opponentID = ag.Game.PlayerWhite
 	} else {
 		opponentWS = ag.blackWS
+		opponentID = ag.Game.PlayerBlack
 	}
+
+	opponentUser, err := h.authHandler.UsecaseHandler.GetUserByUserId(ctx, opponentID)
+	if err != nil {
+		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "opponent user not found")
+		conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
+		return
+	}
+
+	userByte, err := json.Marshal(opponentUser)
+	if err != nil {
+		httpresponse.WriteAPIError(w, http.StatusInternalServerError, "user_not_in_this_game", "Failed to marshal user")
+		return
+	}
+
+	conn.WriteMessage(websocket.TextMessage, userByte)
+
 	activeGamesMu.Unlock()
 	h.log.Infof("HandleStartGame: assigned WS slot for player %s game %s (opponent connected: %v)", playerID, gameKey, opponentWS != nil)
 
