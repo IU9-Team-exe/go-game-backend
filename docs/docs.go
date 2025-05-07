@@ -22,7 +22,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Добавляет пользователя в игру по публичному ключу. Нужна авторизация.",
+                "description": "Добавляет пользователя в существующую игру.",
                 "consumes": [
                     "application/json"
                 ],
@@ -32,10 +32,10 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Присоединиться к существующей игре",
+                "summary": "Присоединиться к игре",
                 "parameters": [
                     {
-                        "description": "Ключ и роль",
+                        "description": "Публичный ключ и роль",
                         "name": "payload",
                         "in": "body",
                         "required": true,
@@ -46,21 +46,57 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Успешно",
+                        "description": "Успешно присоединился",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.Response"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpresponse.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "Body": {
+                                            "$ref": "#/definitions/game.JsonOKResponse"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
-                        "description": "Игра не найдена / пользователь уже в игре",
+                        "description": "Игра не найдена или неверные параметры",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "Неавторизован",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
+                        }
+                    },
+                    "405": {
+                        "description": "Метод не разрешён",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "Пользователь уже в игре",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpresponse.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "Body": {
+                                            "$ref": "#/definitions/game.AlreadyInGameResponse"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -73,7 +109,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Регистрирует новую запись в базе и отдаёт публичный ключ партии. Нужна авторизация.",
+                "description": "Регистрирует новую игру и возвращает её публичный ключ.",
                 "consumes": [
                     "application/json"
                 ],
@@ -83,10 +119,10 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Создать новую игру человека против человека",
+                "summary": "Создать новую игру человек vs человек",
                 "parameters": [
                     {
-                        "description": "Параметры игры",
+                        "description": "Параметры новой игры",
                         "name": "payload",
                         "in": "body",
                         "required": true,
@@ -97,21 +133,57 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Публичный ключ игры",
                         "schema": {
-                            "$ref": "#/definitions/game.GameCreateResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpresponse.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "Body": {
+                                            "$ref": "#/definitions/game.GameCreateResponse"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
-                        "description": "Ошибочные параметры или пользователь уже в игре",
+                        "description": "Ошибочные параметры",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
                     },
                     "401": {
-                        "description": "Нет cookie sessionID",
+                        "description": "Неавторизован",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
+                        }
+                    },
+                    "405": {
+                        "description": "Метод не разрешён",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "Пользователь уже в игре",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpresponse.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "Body": {
+                                            "$ref": "#/definitions/game.AlreadyInGameResponse"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -124,7 +196,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Отправляет SGF текущей игры в KataGo для анализа. Если ключ не передан, будет использована активная игра пользователя.",
+                "description": "Отправляет SGF в KataGo для анализа (по умолчанию — активная игра).",
                 "consumes": [
                     "application/json"
                 ],
@@ -134,18 +206,18 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Анализ текущего состояния игры",
+                "summary": "Анализ текущей игры",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "ключ игры (secret, опционально)",
+                        "description": "Секретный ключ игры",
                         "name": "secret_key",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Результаты анализа от KataGo",
+                        "description": "Результаты анализа",
                         "schema": {
                             "allOf": [
                                 {
@@ -163,7 +235,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Ошибка запроса или анализа игры",
+                        "description": "Некорректный запрос",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
@@ -190,7 +262,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Обрабатывает ход пользователя, генерирует ответный ход бота и возвращает обновлённый список ходов и SGF партии.",
+                "description": "Принимает ход пользователя, генерирует ход бота, возвращает все ходы и SGF.",
                 "consumes": [
                     "application/json"
                 ],
@@ -200,7 +272,7 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Сгенерировать ход против бота",
+                "summary": "Ход против бота",
                 "parameters": [
                     {
                         "description": "Ход пользователя",
@@ -214,33 +286,45 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Список ходов и новый SGF",
+                        "description": "Список ходов и SGF",
                         "schema": {
-                            "$ref": "#/definitions/game.BotGenerateMoveResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpresponse.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "Body": {
+                                            "$ref": "#/definitions/game.BotGenerateMoveResponse"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
-                        "description": "Неверный JSON или ошибка логики игры",
+                        "description": "Неверный JSON или логика игры",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.Response"
                         }
                     },
                     "401": {
                         "description": "Неавторизован",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.Response"
                         }
                     },
                     "405": {
-                        "description": "Method Not Allowed",
+                        "description": "Метод не разрешён",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.Response"
                         }
                     },
                     "500": {
                         "description": "Внутренняя ошибка сервера",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.Response"
                         }
                     }
                 }
@@ -253,30 +337,30 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Возвращает страницу архивных игр с возможностью фильтрации по году или имени игрока (один из параметров обязателен).",
+                "description": "Возвращает архивные игры с фильтрацией и пагинацией.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "game"
                 ],
-                "summary": "Получить список игр из архива с пагинацией",
+                "summary": "Список игр из архива",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Фильтр по году (если не указан фильтр по имени)",
+                        "description": "Фильтр по году",
                         "name": "year",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Фильтр по имени игрока (если не указан год)",
+                        "description": "Фильтр по имени игрока",
                         "name": "name",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "Номер страницы (по умолчанию 0)",
+                        "description": "Номер страницы",
                         "name": "page",
                         "in": "query"
                     }
@@ -301,13 +385,13 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Некорректный запрос или ошибка получения архива",
+                        "description": "Некорректный запрос",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
                     },
                     "401": {
-                        "description": "Неавторизованный",
+                        "description": "Неавторизован",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
@@ -402,19 +486,37 @@ const docTemplate = `{
                     "200": {
                         "description": "Информация об игре",
                         "schema": {
-                            "$ref": "#/definitions/game.GetGameInfoResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpresponse.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "Body": {
+                                            "$ref": "#/definitions/game.GetGameInfoResponse"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
-                        "description": "Некорректный запрос или ошибка в формате JSON",
+                        "description": "Некорректный запрос или ошибка JSON",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Игра не найдена",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.Response"
                         }
                     },
                     "500": {
                         "description": "Внутренняя ошибка сервера",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.ErrorResponse"
+                            "$ref": "#/definitions/httpresponse.Response"
                         }
                     }
                 }
@@ -427,7 +529,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Возвращает запись об архивной игре по её идентификатору в архиве.",
+                "description": "Возвращает запись об архивной игре по её идентификатору.",
                 "consumes": [
                     "application/json"
                 ],
@@ -437,10 +539,10 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Получить игру из архива по идентификатору",
+                "summary": "Получить игру из архива по ID",
                 "parameters": [
                     {
-                        "description": "Идентификатор записи архива",
+                        "description": "Идентификатор архива",
                         "name": "payload",
                         "in": "body",
                         "required": true,
@@ -451,7 +553,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Данные архивной игры",
+                        "description": "Данные игры из архива",
                         "schema": {
                             "allOf": [
                                 {
@@ -469,7 +571,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Некорректный запрос или ошибка поиска игры",
+                        "description": "Некорректный запрос",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
@@ -496,18 +598,18 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Возвращает страницу с именами игроков, отсортированными по количеству сыгранных игр.",
+                "description": "Возвращает имена игроков, отсортированные по количеству игр.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "game"
                 ],
-                "summary": "Получить список игроков из архива",
+                "summary": "Список игроков в архиве",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Номер страницы (по умолчанию 1)",
+                        "description": "Номер страницы",
                         "name": "page",
                         "in": "query"
                     }
@@ -529,12 +631,6 @@ const docTemplate = `{
                                     }
                                 }
                             ]
-                        }
-                    },
-                    "400": {
-                        "description": "Ошибка получения списка имён",
-                        "schema": {
-                            "$ref": "#/definitions/httpresponse.Response"
                         }
                     },
                     "401": {
@@ -603,14 +699,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/getYearsInArchive": {
-            "get": {
+        "/getUserByUsername": {
+            "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Возвращает отсортированный список лет, за которые имеются архивные игры.",
+                "description": "Возвращает пользователя по его username. Требуется авторизация по cookie.",
                 "consumes": [
                     "application/json"
                 ],
@@ -618,9 +714,57 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
+                    "user"
+                ],
+                "summary": "Получить данные пользователя",
+                "parameters": [
+                    {
+                        "description": "username пользователя",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/auth.UserFindRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/user.User"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректный JSON или пользователь не найден",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Пользователь не авторизован",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/getYearsInArchive": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает все года, за которые есть игры в архиве.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
                     "game"
                 ],
-                "summary": "Получить список годов в архиве",
+                "summary": "Список годов в архиве",
                 "responses": {
                     "200": {
                         "description": "Список годов",
@@ -640,14 +784,8 @@ const docTemplate = `{
                             ]
                         }
                     },
-                    "400": {
-                        "description": "Ошибка получения годов",
-                        "schema": {
-                            "$ref": "#/definitions/httpresponse.Response"
-                        }
-                    },
                     "401": {
-                        "description": "Неавторизованный",
+                        "description": "Неавторизован",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
@@ -668,7 +806,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Освобождает слот игрока. Требуется авторизация.",
+                "description": "Покидает текущую игру по публичному ключу.",
                 "produces": [
                     "application/json"
                 ],
@@ -680,26 +818,44 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "Публичный ключ игры",
-                        "name": "public_key",
+                        "name": "gameKey",
                         "in": "query",
                         "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Успешно вышел из игры",
                         "schema": {
-                            "$ref": "#/definitions/httpresponse.Response"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpresponse.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "Body": {
+                                            "$ref": "#/definitions/game.JsonOKResponse"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "Ошибочный запрос",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "Неавторизован",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.Response"
+                        }
+                    },
+                    "405": {
+                        "description": "Метод не разрешён",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
@@ -837,7 +993,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Создаёт новую игру против бота и возвращает секретный ключ игры.",
+                "description": "Создаёт игру против KataGo и возвращает секретный ключ.",
                 "consumes": [
                     "application/json"
                 ],
@@ -847,7 +1003,7 @@ const docTemplate = `{
                 "tags": [
                     "game"
                 ],
-                "summary": "Создать новую игру с ботом",
+                "summary": "Создать игру с ботом",
                 "parameters": [
                     {
                         "description": "Параметры новой игры с ботом",
@@ -882,7 +1038,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Ошибка создания игры",
+                        "description": "Неверный запрос",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
@@ -895,6 +1051,12 @@ const docTemplate = `{
                     },
                     "405": {
                         "description": "Метод не разрешён",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "Бот-игра уже существует",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
@@ -955,14 +1117,14 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Апгрейд HTTP→WS для обмена ходами в режиме реального времени. После ответа 101 дальнейшее общение идёт по протоколу WebSocket.",
+                "description": "Апгрейд HTTP→WS для обмена ходами в реальном времени.",
                 "produces": [
                     "text/plain"
                 ],
                 "tags": [
                     "game"
                 ],
-                "summary": "WebSocket‑сессия игры",
+                "summary": "WebSocket-сессия игры",
                 "parameters": [
                     {
                         "type": "string",
@@ -980,19 +1142,19 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "Ошибка запроса",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "Неавторизован",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
                     },
                     "403": {
-                        "description": "Forbidden",
+                        "description": "Пользователь не в этой игре",
                         "schema": {
                             "$ref": "#/definitions/httpresponse.Response"
                         }
@@ -1072,6 +1234,20 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "user_id": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "game.AlreadyInGameResponse": {
+            "type": "object",
+            "properties": {
+                "currGameKey": {
+                    "type": "string"
+                },
+                "error": {
                     "type": "string"
                 }
             }
@@ -1363,6 +1539,14 @@ const docTemplate = `{
                 }
             }
         },
+        "game.JsonOKResponse": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
         "game.KataGoResponse": {
             "type": "object",
             "properties": {
@@ -1560,18 +1744,13 @@ const docTemplate = `{
                 }
             }
         },
-        "httpresponse.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "ErrorDescription": {
-                    "type": "string"
-                }
-            }
-        },
         "httpresponse.Response": {
             "type": "object",
             "properties": {
                 "Body": {},
+                "Code": {
+                    "type": "string"
+                },
                 "Status": {
                     "type": "integer"
                 }
