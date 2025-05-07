@@ -368,9 +368,9 @@ func (h *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 	// 8) Сохраняем новый conn под защитой мьютекса
 	activeGamesMu.Lock()
 	*slotPtr = conn
-	opponentID := ""
-	// Захватим свежего оппонента
+	var opponentID string
 	var opponentWS *websocket.Conn
+
 	if playerID == ag.Game.PlayerBlack {
 		opponentWS = ag.whiteWS
 		opponentID = ag.Game.PlayerWhite
@@ -378,23 +378,36 @@ func (h *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 		opponentWS = ag.blackWS
 		opponentID = ag.Game.PlayerBlack
 	}
-
-	opponentUser, err := h.authHandler.UsecaseHandler.GetUserByUserId(ctx, opponentID)
-	if err != nil {
-		httpresponse.WriteAPIError(w, http.StatusUnauthorized, "unauthorized", "opponent user not found")
-		conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
-		return
-	}
-
-	userByte, err := json.Marshal(opponentUser)
-	if err != nil {
-		httpresponse.WriteAPIError(w, http.StatusInternalServerError, "user_not_in_this_game", "Failed to marshal user")
-		return
-	}
-
-	conn.WriteMessage(websocket.TextMessage, userByte)
-
 	activeGamesMu.Unlock()
+
+	if opponentWS == nil || opponentID == "" {
+		// никто ещё не присоединился
+		conn.WriteJSON(map[string]string{
+			"event": "waiting_for_opponent",
+			"you":   playerID,
+		})
+	} else {
+		oppUser, err := h.authHandler.UsecaseHandler.GetUserByUserId(ctx, opponentID)
+		if err != nil {
+			conn.WriteJSON(map[string]string{"event": "error", "msg": "cannot fetch opponent"})
+		} else {
+			conn.WriteJSON(map[string]interface{}{
+				"event": "opponent_info",
+				"user":  oppUser,
+			})
+		}
+	}
+
+	if opponentWS != nil {
+		me, err := h.authHandler.UsecaseHandler.GetUserByUserId(ctx, playerID)
+		if err == nil {
+			opponentWS.WriteJSON(map[string]interface{}{
+				"event": "opponent_joined",
+				"user":  me,
+			})
+		}
+	}
+
 	h.log.Infof("HandleStartGame: assigned WS slot for player %s game %s (opponent connected: %v)", playerID, gameKey, opponentWS != nil)
 
 	// 9) Цикл сообщений
