@@ -664,7 +664,7 @@ func (g *GameHandler) HandleAnalyseGame(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	secret := r.URL.Query().Get("secret_key")
+	secret := r.URL.Query().Get("game_key")
 	if secret == "" {
 		var err error
 		secret, err = g.gameUC.GetActiveGameSecretKey(r.Context(), userID, false)

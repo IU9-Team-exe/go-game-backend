@@ -228,6 +228,10 @@ func (g *GameRepository) CalculateUserColor(ctx context.Context, gameKey string)
 }
 
 func (g *GameRepository) GetGameByGameKey(ctx context.Context, gameKey string) (*game.Game, error) {
+	if g.IsKeyPublic(gameKey) {
+		return nil, fmt.Errorf("%w: %s", errs.ErrGameNotFound, gameKey)
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -238,9 +242,7 @@ func (g *GameRepository) GetGameByGameKey(ctx context.Context, gameKey string) (
 	if err == nil {
 		return &live, nil
 	}
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return nil, fmt.Errorf("%w: %s", errs.ErrGameNotFound, gameKey)
-	} else if err != nil {
+	if !errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, fmt.Errorf("%w: %v", errs.ErrGameLookup, err)
 	}
 
@@ -274,6 +276,8 @@ func (g *GameRepository) GetGameByGameKey(ctx context.Context, gameKey string) (
 	}
 	return &mapped, nil
 }
+
+func (g *GameRepository) IsKeyPublic(key string) bool { return len(key) == 5 }
 
 func (g *GameRepository) SaveSGFToRedis(ctx context.Context, key string, sgfText string) error {
 	return g.redis.Set(ctx, key, sgfText, 0).Err()
