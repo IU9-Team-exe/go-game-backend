@@ -250,7 +250,11 @@ func (a *AuthHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := a.UsecaseHandler.GetUserByUserId(r.Context(), req.UserID)
+	if req.UserID == "" {
+		req.UserID = userID
+	}
+
+	userData, err := a.UsecaseHandler.GetUserByUserId(r.Context(), req.UserID)
 	if err != nil {
 		status, code := errs.TranslateErr(err)
 		a.log.Errorf("GetUserByID: lookup failed for %s: %v", req.UserID, err)
@@ -258,7 +262,7 @@ func (a *AuthHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", user)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", userData)
 }
 
 // GetUserByUsername godoc
@@ -293,7 +297,7 @@ func (a *AuthHandler) GetUserByUsername(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	user, err := a.UsecaseHandler.GetUserByUsername(r.Context(), req.Username)
+	userData, err := a.UsecaseHandler.GetUserByUsername(r.Context(), req.Username)
 	if err != nil {
 		status, code := errs.TranslateErr(err)
 		a.log.Errorf("GetUserByID: lookup failed for %s: %v", req.UserID, err)
@@ -301,7 +305,7 @@ func (a *AuthHandler) GetUserByUsername(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", user)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", userData)
 }
 
 func (a *AuthHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
