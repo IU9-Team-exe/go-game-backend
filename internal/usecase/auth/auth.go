@@ -22,6 +22,7 @@ type UserStorage interface {
 	CreateUser(username, email, password string) (user.User, error)
 	AddLose(ctx context.Context, userID string) error
 	GetUserByUsername(ctx context.Context, username string) (user.User, error)
+	UpdateUser(ctx context.Context, user user.User, userID string) error
 }
 
 // SessionStorage описывает операции над сессиями (чтение, запись, удаление).
@@ -125,4 +126,9 @@ func (a *UserUsecaseHandler) AddLose(userID string) error {
 		return err
 	}
 	return nil
+}
+
+func (a *UserUsecaseHandler) UpdateUser(ctx context.Context, user user.User, userID string) error {
+	err := a.userStorage.UpdateUser(ctx, user, userID)
+	return err
 }

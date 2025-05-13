@@ -92,6 +92,8 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Post("/login", h.auth.Login)
 	r.Post("/logout", h.auth.Logout)
 	r.Post("/register", h.auth.Register)
+	r.Post("/updateUserData", h.auth.UpdateUser)
+
 	r.Post("/NewGame", h.game.HandleNewGame)
 	r.Post("/JoinGame", h.game.HandleJoinGame)
 	r.Get("/startGame", h.game.HandleStartGame)

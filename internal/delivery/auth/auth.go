@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"team_exe/internal/adapters"
-	_ "team_exe/internal/domain/user"
+	"team_exe/internal/domain/user"
 	errs "team_exe/internal/errors"
 	"team_exe/internal/httpresponse"
 	"team_exe/internal/repository"
@@ -302,4 +302,34 @@ func (a *AuthHandler) GetUserByUsername(w http.ResponseWriter, r *http.Request) 
 	}
 
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", user)
+}
+
+func (a *AuthHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		a.log.Error("GetUserByID: only POST allowed")
+		httpresponse.WriteAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST allowed")
+		return
+	}
+
+	userID := a.GetUserID(w, r)
+	if userID == "" {
+		return
+	}
+
+	var newUserData user.User
+	if err := utils.DecodeJSONRequest(r, &newUserData); err != nil {
+		a.log.Error("GetUserByID: JSON decode failed:", err)
+		httpresponse.WriteAPIError(w, http.StatusBadRequest, "bad_json", err.Error())
+		return
+	}
+
+	err := a.UsecaseHandler.UpdateUser(r.Context(), newUserData, userID)
+	if err != nil {
+		status, code := errs.TranslateErr(err)
+		a.log.Errorf("Update userdata failed for %s: %v", newUserData.Username, err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
+		return
+	}
+
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", newUserData)
 }
