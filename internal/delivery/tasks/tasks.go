@@ -55,7 +55,7 @@ func (th *TaskHandler) HandleStoreInMongo(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "successfully put tasks to mongo")
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", "successfully put tasks to mongo")
 }
 
 // HandleGetAvailableGamesForUser godoc
@@ -118,7 +118,7 @@ func (th *TaskHandler) HandleGetAvailableGamesForUser(w http.ResponseWriter, r *
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, resp)
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", resp)
 }
 
 // HandleMarkTaskAsDone godoc
@@ -166,5 +166,5 @@ func (th *TaskHandler) HandleMarkTaskAsDone(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	httpresponse.WriteResponseWithStatus(w, http.StatusOK, JsonOKResponse{Text: "ok"})
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", JsonOKResponse{Text: "ok"})
 }

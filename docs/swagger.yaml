@@ -20,6 +20,15 @@ definitions:
     properties:
       user_id:
         type: string
+      username:
+        type: string
+    type: object
+  game.AlreadyInGameResponse:
+    properties:
+      currGameKey:
+        type: string
+      error:
+        type: string
     type: object
   game.ArchiveNamesResponse:
     properties:
@@ -208,6 +217,11 @@ definitions:
       player_white_nickname:
         type: string
     type: object
+  game.JsonOKResponse:
+    properties:
+      text:
+        type: string
+    type: object
   game.KataGoResponse:
     properties:
       error:
@@ -337,14 +351,11 @@ definitions:
       year:
         type: integer
     type: object
-  httpresponse.ErrorResponse:
-    properties:
-      ErrorDescription:
-        type: string
-    type: object
   httpresponse.Response:
     properties:
       Body: {}
+      Code:
+        type: string
       Status:
         type: integer
     type: object
@@ -463,9 +474,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Добавляет пользователя в игру по публичному ключу. Нужна авторизация.
+      description: Добавляет пользователя в существующую игру.
       parameters:
-      - description: Ключ и роль
+      - description: Публичный ключ и роль
         in: body
         name: payload
         required: true
@@ -475,30 +486,47 @@ paths:
       - application/json
       responses:
         "200":
-          description: Успешно
+          description: Успешно присоединился
           schema:
-            $ref: '#/definitions/httpresponse.Response'
+            allOf:
+            - $ref: '#/definitions/httpresponse.Response'
+            - properties:
+                Body:
+                  $ref: '#/definitions/game.JsonOKResponse'
+              type: object
         "400":
-          description: Игра не найдена / пользователь уже в игре
+          description: Игра не найдена или неверные параметры
           schema:
             $ref: '#/definitions/httpresponse.Response'
         "401":
-          description: Unauthorized
+          description: Неавторизован
           schema:
             $ref: '#/definitions/httpresponse.Response'
+        "405":
+          description: Метод не разрешён
+          schema:
+            $ref: '#/definitions/httpresponse.Response'
+        "409":
+          description: Пользователь уже в игре
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpresponse.Response'
+            - properties:
+                Body:
+                  $ref: '#/definitions/game.AlreadyInGameResponse'
+              type: object
       security:
       - ApiKeyAuth: []
-      summary: Присоединиться к существующей игре
+      summary: Присоединиться к игре
       tags:
       - game
   /NewGame:
     post:
       consumes:
       - application/json
-      description: Регистрирует новую запись в базе и отдаёт публичный ключ партии.
-        Нужна авторизация.
+      description: Регистрирует новую игру и возвращает её публичный ключ.
       parameters:
-      - description: Параметры игры
+      - description: Параметры новой игры
         in: body
         name: payload
         required: true
@@ -508,30 +536,47 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Публичный ключ игры
           schema:
-            $ref: '#/definitions/game.GameCreateResponse'
+            allOf:
+            - $ref: '#/definitions/httpresponse.Response'
+            - properties:
+                Body:
+                  $ref: '#/definitions/game.GameCreateResponse'
+              type: object
         "400":
-          description: Ошибочные параметры или пользователь уже в игре
+          description: Ошибочные параметры
           schema:
             $ref: '#/definitions/httpresponse.Response'
         "401":
-          description: Нет cookie sessionID
+          description: Неавторизован
           schema:
             $ref: '#/definitions/httpresponse.Response'
+        "405":
+          description: Метод не разрешён
+          schema:
+            $ref: '#/definitions/httpresponse.Response'
+        "409":
+          description: Пользователь уже в игре
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpresponse.Response'
+            - properties:
+                Body:
+                  $ref: '#/definitions/game.AlreadyInGameResponse'
+              type: object
       security:
       - ApiKeyAuth: []
-      summary: Создать новую игру человека против человека
+      summary: Создать новую игру человек vs человек
       tags:
       - game
   /analyseCurrent:
     get:
       consumes:
       - application/json
-      description: Отправляет SGF текущей игры в KataGo для анализа. Если ключ не
-        передан, будет использована активная игра пользователя.
+      description: Отправляет SGF в KataGo для анализа (по умолчанию — активная игра).
       parameters:
-      - description: ключ игры (secret, опционально)
+      - description: Секретный ключ игры
         in: query
         name: secret_key
         type: string
@@ -539,7 +584,7 @@ paths:
       - application/json
       responses:
         "200":
-          description: Результаты анализа от KataGo
+          description: Результаты анализа
           schema:
             allOf:
             - $ref: '#/definitions/httpresponse.Response'
@@ -548,7 +593,7 @@ paths:
                   $ref: '#/definitions/game.KataGoResponse'
               type: object
         "400":
-          description: Ошибка запроса или анализа игры
+          description: Некорректный запрос
           schema:
             $ref: '#/definitions/httpresponse.Response'
         "401":
@@ -561,15 +606,15 @@ paths:
             $ref: '#/definitions/httpresponse.Response'
       security:
       - ApiKeyAuth: []
-      summary: Анализ текущего состояния игры
+      summary: Анализ текущей игры
       tags:
       - game
   /generateMove:
     post:
       consumes:
       - application/json
-      description: Обрабатывает ход пользователя, генерирует ответный ход бота и возвращает
-        обновлённый список ходов и SGF партии.
+      description: Принимает ход пользователя, генерирует ход бота, возвращает все
+        ходы и SGF.
       parameters:
       - description: Ход пользователя
         in: body
@@ -581,44 +626,48 @@ paths:
       - application/json
       responses:
         "200":
-          description: Список ходов и новый SGF
+          description: Список ходов и SGF
           schema:
-            $ref: '#/definitions/game.BotGenerateMoveResponse'
+            allOf:
+            - $ref: '#/definitions/httpresponse.Response'
+            - properties:
+                Body:
+                  $ref: '#/definitions/game.BotGenerateMoveResponse'
+              type: object
         "400":
-          description: Неверный JSON или ошибка логики игры
+          description: Неверный JSON или логика игры
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.Response'
         "401":
           description: Неавторизован
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.Response'
         "405":
-          description: Method Not Allowed
+          description: Метод не разрешён
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.Response'
         "500":
           description: Внутренняя ошибка сервера
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.Response'
       security:
       - ApiKeyAuth: []
-      summary: Сгенерировать ход против бота
+      summary: Ход против бота
       tags:
       - game
   /getArchive:
     get:
-      description: Возвращает страницу архивных игр с возможностью фильтрации по году
-        или имени игрока (один из параметров обязателен).
+      description: Возвращает архивные игры с фильтрацией и пагинацией.
       parameters:
-      - description: Фильтр по году (если не указан фильтр по имени)
+      - description: Фильтр по году
         in: query
         name: year
         type: integer
-      - description: Фильтр по имени игрока (если не указан год)
+      - description: Фильтр по имени игрока
         in: query
         name: name
         type: string
-      - description: Номер страницы (по умолчанию 0)
+      - description: Номер страницы
         in: query
         name: page
         type: integer
@@ -635,11 +684,11 @@ paths:
                   $ref: '#/definitions/game.ArchiveResponse'
               type: object
         "400":
-          description: Некорректный запрос или ошибка получения архива
+          description: Некорректный запрос
           schema:
             $ref: '#/definitions/httpresponse.Response'
         "401":
-          description: Неавторизованный
+          description: Неавторизован
           schema:
             $ref: '#/definitions/httpresponse.Response'
         "405":
@@ -648,7 +697,7 @@ paths:
             $ref: '#/definitions/httpresponse.Response'
       security:
       - ApiKeyAuth: []
-      summary: Получить список игр из архива с пагинацией
+      summary: Список игр из архива
       tags:
       - game
   /getAvailableGamesForUser:
@@ -704,15 +753,24 @@ paths:
         "200":
           description: Информация об игре
           schema:
-            $ref: '#/definitions/game.GetGameInfoResponse'
+            allOf:
+            - $ref: '#/definitions/httpresponse.Response'
+            - properties:
+                Body:
+                  $ref: '#/definitions/game.GetGameInfoResponse'
+              type: object
         "400":
-          description: Некорректный запрос или ошибка в формате JSON
+          description: Некорректный запрос или ошибка JSON
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.Response'
+        "404":
+          description: Игра не найдена
+          schema:
+            $ref: '#/definitions/httpresponse.Response'
         "500":
           description: Внутренняя ошибка сервера
           schema:
-            $ref: '#/definitions/httpresponse.ErrorResponse'
+            $ref: '#/definitions/httpresponse.Response'
       summary: Получить игру по публичному ключу
       tags:
       - game
@@ -720,9 +778,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Возвращает запись об архивной игре по её идентификатору в архиве.
+      description: Возвращает запись об архивной игре по её идентификатору.
       parameters:
-      - description: Идентификатор записи архива
+      - description: Идентификатор архива
         in: body
         name: payload
         required: true
@@ -732,7 +790,7 @@ paths:
       - application/json
       responses:
         "200":
-          description: Данные архивной игры
+          description: Данные игры из архива
           schema:
             allOf:
             - $ref: '#/definitions/httpresponse.Response'
@@ -741,7 +799,7 @@ paths:
                   $ref: '#/definitions/game.GameFromArchive'
               type: object
         "400":
-          description: Некорректный запрос или ошибка поиска игры
+          description: Некорректный запрос
           schema:
             $ref: '#/definitions/httpresponse.Response'
         "401":
@@ -754,15 +812,14 @@ paths:
             $ref: '#/definitions/httpresponse.Response'
       security:
       - ApiKeyAuth: []
-      summary: Получить игру из архива по идентификатору
+      summary: Получить игру из архива по ID
       tags:
       - game
   /getNamesInArchive:
     get:
-      description: Возвращает страницу с именами игроков, отсортированными по количеству
-        сыгранных игр.
+      description: Возвращает имена игроков, отсортированные по количеству игр.
       parameters:
-      - description: Номер страницы (по умолчанию 1)
+      - description: Номер страницы
         in: query
         name: page
         type: integer
@@ -778,10 +835,6 @@ paths:
                 Body:
                   $ref: '#/definitions/game.ArchiveNamesResponse'
               type: object
-        "400":
-          description: Ошибка получения списка имён
-          schema:
-            $ref: '#/definitions/httpresponse.Response'
         "401":
           description: Неавторизован
           schema:
@@ -792,7 +845,7 @@ paths:
             $ref: '#/definitions/httpresponse.Response'
       security:
       - ApiKeyAuth: []
-      summary: Получить список игроков из архива
+      summary: Список игроков в архиве
       tags:
       - game
   /getUserById:
@@ -827,12 +880,42 @@ paths:
       summary: Получить данные пользователя
       tags:
       - user
-  /getYearsInArchive:
-    get:
+  /getUserByUsername:
+    post:
       consumes:
       - application/json
-      description: Возвращает отсортированный список лет, за которые имеются архивные
-        игры.
+      description: Возвращает пользователя по его username. Требуется авторизация
+        по cookie.
+      parameters:
+      - description: username пользователя
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/auth.UserFindRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/user.User'
+        "400":
+          description: Некорректный JSON или пользователь не найден
+          schema:
+            $ref: '#/definitions/httpresponse.Response'
+        "401":
+          description: Пользователь не авторизован
+          schema:
+            $ref: '#/definitions/httpresponse.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Получить данные пользователя
+      tags:
+      - user
+  /getYearsInArchive:
+    get:
+      description: Возвращает все года, за которые есть игры в архиве.
       produces:
       - application/json
       responses:
@@ -845,12 +928,8 @@ paths:
                 Body:
                   $ref: '#/definitions/game.ArchiveYearsResponse'
               type: object
-        "400":
-          description: Ошибка получения годов
-          schema:
-            $ref: '#/definitions/httpresponse.Response'
         "401":
-          description: Неавторизованный
+          description: Неавторизован
           schema:
             $ref: '#/definitions/httpresponse.Response'
         "405":
@@ -859,31 +938,40 @@ paths:
             $ref: '#/definitions/httpresponse.Response'
       security:
       - ApiKeyAuth: []
-      summary: Получить список годов в архиве
+      summary: Список годов в архиве
       tags:
       - game
   /leaveGame:
     get:
-      description: Освобождает слот игрока. Требуется авторизация.
+      description: Покидает текущую игру по публичному ключу.
       parameters:
       - description: Публичный ключ игры
         in: query
-        name: public_key
+        name: gameKey
         required: true
         type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Успешно вышел из игры
           schema:
-            $ref: '#/definitions/httpresponse.Response'
+            allOf:
+            - $ref: '#/definitions/httpresponse.Response'
+            - properties:
+                Body:
+                  $ref: '#/definitions/game.JsonOKResponse'
+              type: object
         "400":
-          description: Bad Request
+          description: Ошибочный запрос
           schema:
             $ref: '#/definitions/httpresponse.Response'
         "401":
-          description: Unauthorized
+          description: Неавторизован
+          schema:
+            $ref: '#/definitions/httpresponse.Response'
+        "405":
+          description: Метод не разрешён
           schema:
             $ref: '#/definitions/httpresponse.Response'
       security:
@@ -973,7 +1061,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Создаёт новую игру против бота и возвращает секретный ключ игры.
+      description: Создаёт игру против KataGo и возвращает секретный ключ.
       parameters:
       - description: Параметры новой игры с ботом
         in: body
@@ -996,7 +1084,7 @@ paths:
                   type: object
               type: object
         "400":
-          description: Ошибка создания игры
+          description: Неверный запрос
           schema:
             $ref: '#/definitions/httpresponse.Response'
         "401":
@@ -1007,9 +1095,13 @@ paths:
           description: Метод не разрешён
           schema:
             $ref: '#/definitions/httpresponse.Response'
+        "409":
+          description: Бот-игра уже существует
+          schema:
+            $ref: '#/definitions/httpresponse.Response'
       security:
       - ApiKeyAuth: []
-      summary: Создать новую игру с ботом
+      summary: Создать игру с ботом
       tags:
       - game
   /register:
@@ -1044,8 +1136,7 @@ paths:
       - auth
   /startGame:
     get:
-      description: Апгрейд HTTP→WS для обмена ходами в режиме реального времени. После
-        ответа 101 дальнейшее общение идёт по протоколу WebSocket.
+      description: Апгрейд HTTP→WS для обмена ходами в реальном времени.
       parameters:
       - description: Публичный ключ игры
         in: query
@@ -1060,20 +1151,20 @@ paths:
           schema:
             type: string
         "400":
-          description: Bad Request
+          description: Ошибка запроса
           schema:
             $ref: '#/definitions/httpresponse.Response'
         "401":
-          description: Unauthorized
+          description: Неавторизован
           schema:
             $ref: '#/definitions/httpresponse.Response'
         "403":
-          description: Forbidden
+          description: Пользователь не в этой игре
           schema:
             $ref: '#/definitions/httpresponse.Response'
       security:
       - ApiKeyAuth: []
-      summary: WebSocket‑сессия игры
+      summary: WebSocket-сессия игры
       tags:
       - game
   /storeTasksToMongoByPath:

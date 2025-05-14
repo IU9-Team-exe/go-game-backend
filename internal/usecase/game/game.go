@@ -2,6 +2,7 @@ package game
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -35,6 +36,8 @@ type GameStore interface {
 	CompleteGame(ctx context.Context, secretKey, finalSgf string) error
 
 	ParseSGF(sgfText string) (*game.Game, error)
+
+	IsKeyPublic(key string) bool
 
 	GetArchiveGamesByYear(ctx context.Context, year, pageNum int) (*game.ArchiveResponse, error)
 	GetArchiveYears(ctx context.Context) (*game.ArchiveYearsResponse, error)
@@ -179,7 +182,7 @@ func (g *GameUseCase) LeaveGame(ctx context.Context, userID, key string) (bool, 
 	var play *game.Game
 	var err error
 
-	if isKeyPublic(key) {
+	if g.store.IsKeyPublic(key) {
 		play, err = g.store.GetGameByPublicKey(ctx, key)
 		if err != nil {
 			return false, err
@@ -213,8 +216,6 @@ func (g *GameUseCase) LeaveGame(ctx context.Context, userID, key string) (bool, 
 	return true, nil
 }
 
-func isKeyPublic(key string) bool { return len(key) == 5 }
-
 // -----------------------------------------------------------------------------
 //  GAME INFO
 // -----------------------------------------------------------------------------
@@ -245,15 +246,15 @@ func (g *GameUseCase) GetGameInfoByPublicKey(ctx context.Context, public string)
 	return play, nil
 }
 
-func (g *GameUseCase) GetGameBySecreteKey(ctx context.Context, secret string) (game.Game, error) {
+func (g *GameUseCase) GetGameBySecreteKey(ctx context.Context, secret string) (*game.Game, error) {
 	play, err := g.store.GetGameByGameKey(ctx, secret)
 	if err != nil {
-		return game.Game{}, err
+		return nil, err
 	}
 	if play.GameKeySecret == "" {
-		return game.Game{}, errs.ErrGameNotFound
+		return nil, errs.ErrGameNotFound
 	}
-	return *play, nil
+	return play, nil
 }
 
 // -----------------------------------------------------------------------------
@@ -385,15 +386,29 @@ func (g *GameUseCase) AddMoveToGameSgf(ctx context.Context, key string, mv game.
 //  KATAGO ANALYSE
 // -----------------------------------------------------------------------------
 
-func (g *GameUseCase) AnalyseCurrentGame(ctx context.Context, secret string) (*game.KataGoResponse, error) {
-	play, err := g.GetGameBySecreteKey(ctx, secret)
+func (g *GameUseCase) AnalyseCurrentGame(ctx context.Context, gameKey string) (*game.KataGoResponse, error) {
+	var play *game.Game
+	var err error
+
+	play, err = g.GetGameBySecreteKey(ctx, gameKey)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, errs.ErrGameNotFound) {
+			play, err = g.GetGameByPublicKey(ctx, gameKey)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
+	}
+
+	if play == nil {
+		return nil, errs.ErrGameNotFound
 	}
 
 	var sgfText string
 	if !play.IsFromArchive {
-		sgfText, err = g.store.LoadSGFFromRedis(ctx, secret)
+		sgfText, err = g.store.LoadSGFFromRedis(ctx, play.GameKeySecret)
 		if err != nil {
 			return nil, err
 		}

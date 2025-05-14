@@ -131,27 +131,46 @@ func (m *MongoUserStorage) GetUserByUsername(ctx context.Context, username strin
 	return result, nil
 }
 
-func (m *MongoUserStorage) UpdateUserByID(ctx context.Context, userID string) (user.User, error) {
+func (m *MongoUserStorage) UpdateUser(ctx context.Context, user user.User, userID string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	userObjID, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
-		return user.User{}, fmt.Errorf("invalid userID format: %w", err)
+		return fmt.Errorf("invalid userID format: %w", err)
 	}
 
 	filter := bson.M{"_id": userObjID}
 	collection := m.adapter.Database.Collection("users")
 
-	var result user.User
-	if err = collection.FindOne(ctx, filter).Decode(&result); err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return user.User{}, fmt.Errorf("user with id %s not found", userID)
-		}
-		return user.User{}, err
+	update := bson.M{}
+	if user.Username != "" {
+		update["username"] = user.Username
+	}
+	if user.Email != "" {
+		update["email"] = user.Email
+	}
+	if user.AvatarURL != "" {
+		update["avatar_url"] = user.AvatarURL
 	}
 
-	return result, nil
+	if len(update) == 0 {
+		return nil
+	}
+
+	res, err := collection.UpdateOne(ctx, filter, bson.M{"$set": update})
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return fmt.Errorf("user with id %s not found", userID)
+		}
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("user with id %s not found", userID)
+	}
+
+	return nil
 }
 
 func (m *MongoUserStorage) AddLose(ctx context.Context, userID string) error {
