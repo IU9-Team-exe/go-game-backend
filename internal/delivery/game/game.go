@@ -44,9 +44,10 @@ type AlreadyInGameResponse struct {
 }
 
 type activeGame struct {
-	Game    game.Game
-	blackWS *websocket.Conn
-	whiteWS *websocket.Conn
+	Game       game.Game
+	blackWS    *websocket.Conn
+	whiteWS    *websocket.Conn
+	spectators map[*websocket.Conn]struct{}
 }
 
 var (
@@ -75,6 +76,14 @@ func NewGameHandler(cfg bootstrap.Config, log *zap.SugaredLogger, mongoAdapter *
 		gameUC:      gameuc.NewGameUseCase(repo.NewGameRepository(cfg, log, redisAdapter.GetClient(), mongoAdapter.Database), authHandler.UsecaseHandler, katagoUC),
 		authHandler: authHandler,
 	}
+}
+
+func (ag *activeGame) spectactorList() []*websocket.Conn {
+	out := make([]*websocket.Conn, 0, len(ag.spectators))
+	for ws := range ag.spectators {
+		out = append(out, ws)
+	}
+	return out
 }
 
 // HandleGetGameByPublicKey godoc
@@ -290,6 +299,7 @@ func (h *GameHandler) HandleJoinGame(w http.ResponseWriter, r *http.Request) {
 // @Failure      401      {object}  httpresponse.Response                "Неавторизован"
 // @Failure      403      {object}  httpresponse.Response                "Пользователь не в этой игре"
 // @Router       /startGame [get]
+// activeGame расширена полем spectators.
 func (h *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -312,170 +322,164 @@ func (h *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if playerID != freshGame.PlayerBlack && playerID != freshGame.PlayerWhite {
-		h.log.Warnf("HandleStartGame: player %s is not in game %s", playerID, gameKey)
-		httpresponse.WriteAPIError(w, http.StatusForbidden, "user_not_in_this_game", "You are not a participant of this game")
-		return
-	}
-
-	h.log.Infof("HandleStartGame: preparing WS for player %s game %s", playerID, gameKey)
 	activeGamesMu.Lock()
 	ag, ok := activeGames[gameKey]
 	if !ok {
-		ag = &activeGame{Game: *freshGame}
+		ag = &activeGame{
+			Game:       *freshGame,
+			spectators: make(map[*websocket.Conn]struct{}),
+		}
 		activeGames[gameKey] = ag
-		h.log.Infof("HandleStartGame: created new activeGame entry for %s", gameKey)
 	} else {
 		ag.Game = *freshGame
-		h.log.Infof("HandleStartGame: refreshed activeGame entry for %s", gameKey)
 	}
 
-	// 5) Определяем слот
-	var slotPtr **websocket.Conn
-	if playerID == ag.Game.PlayerBlack {
-		slotPtr = &ag.blackWS
-	} else {
-		slotPtr = &ag.whiteWS
-	}
-	// Закрываем старое WS, если есть
-	if old := *slotPtr; old != nil {
-		h.log.Infof("HandleStartGame: closing old WS for player %s game %s", playerID, gameKey)
-		old.WriteMessage(websocket.TextMessage, []byte("reconnected"))
-		old.Close()
+	var role string              // "black" | "white" | "spectator"
+	var slotPtr **websocket.Conn // ссылка на blackWS/whiteWS (если игрок)
+
+	switch {
+	case playerID == ag.Game.PlayerBlack:
+		role, slotPtr = "black", &ag.blackWS
+	case playerID == ag.Game.PlayerWhite:
+		role, slotPtr = "white", &ag.whiteWS
+	default:
+		role = "spectator"
 	}
 	activeGamesMu.Unlock()
 
-	// 6) Апгрейдим HTTP → WebSocket
-	h.log.Infof("HandleStartGame: upgrading to WS for player %s game %s", playerID, gameKey)
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		h.log.Errorf("HandleStartGame: WS upgrade error for player %s game %s: %v", playerID, gameKey, err)
-
+		h.log.Errorf("WS upgrade error for %s in game %s: %v", playerID, gameKey, err)
 		return
 	}
-	h.log.Infof("HandleStartGame: WS connection established for player %s game %s", playerID, gameKey)
+	h.log.Infof("WS established for %s (%s) in game %s", playerID, role, gameKey)
 
-	// 7) Дефер очистки
+	activeGamesMu.Lock()
+	if role == "spectator" {
+		ag.spectators[conn] = struct{}{}
+	} else {
+		if *slotPtr != nil {
+			(*slotPtr).WriteMessage(websocket.TextMessage, []byte("reconnected"))
+			(*slotPtr).Close()
+		}
+		*slotPtr = conn
+	}
+	activeGamesMu.Unlock()
+
 	defer func() {
-		h.log.Infof("HandleStartGame: cleaning up WS for player %s game %s", playerID, gameKey)
 		activeGamesMu.Lock()
-		if ag2, ok2 := activeGames[gameKey]; ok2 {
-			if ag2.blackWS == conn {
-				ag2.blackWS = nil
+		if role == "spectator" {
+			delete(ag.spectators, conn)
+		} else {
+			if role == "black" && ag.blackWS == conn {
+				ag.blackWS = nil
 			}
-			if ag2.whiteWS == conn {
-				ag2.whiteWS = nil
+			if role == "white" && ag.whiteWS == conn {
+				ag.whiteWS = nil
 			}
 		}
 		activeGamesMu.Unlock()
 		conn.Close()
 	}()
 
-	// 8) Сохраняем новый conn под защитой мьютекса
-	activeGamesMu.Lock()
-	*slotPtr = conn
-	var opponentID string
-	var opponentWS *websocket.Conn
-
-	if playerID == ag.Game.PlayerBlack {
-		opponentWS = ag.whiteWS
-		opponentID = ag.Game.PlayerWhite
-	} else {
-		opponentWS = ag.blackWS
-		opponentID = ag.Game.PlayerBlack
-	}
-	activeGamesMu.Unlock()
-
-	if opponentWS == nil || opponentID == "" {
-		// никто ещё не присоединился
-		conn.WriteJSON(map[string]string{
-			"event": "waiting_for_opponent",
-			"you":   playerID,
+	switch role {
+	case "spectator":
+		conn.WriteJSON(map[string]interface{}{
+			"event":        "spectator_info",
+			"player_black": ag.Game.PlayerBlack,
+			"player_white": ag.Game.PlayerWhite,
 		})
-	} else {
-		oppUser, err := h.authHandler.UsecaseHandler.GetUserByUserId(ctx, opponentID)
-		if err != nil {
-			conn.WriteJSON(map[string]string{"event": "error", "msg": "cannot fetch opponent"})
+	default: // игрок
+		var opponentID string
+		activeGamesMu.Lock()
+		if role == "black" {
+			opponentID = ag.Game.PlayerWhite
 		} else {
-			conn.WriteJSON(map[string]interface{}{
-				"event": "opponent_info",
-				"user":  oppUser,
+			opponentID = ag.Game.PlayerBlack
+		}
+		opponentWS := map[bool]*websocket.Conn{
+			true:  ag.whiteWS,
+			false: ag.blackWS,
+		}[role == "black"]
+		activeGamesMu.Unlock()
+
+		if opponentID == "" || opponentWS == nil {
+			conn.WriteJSON(map[string]string{
+				"event": "waiting_for_opponent",
+				"you":   playerID,
 			})
+		} else {
+			if oppUser, err := h.authHandler.UsecaseHandler.GetUserByUserId(ctx, opponentID); err == nil {
+				conn.WriteJSON(map[string]interface{}{
+					"event": "opponent_info",
+					"user":  oppUser,
+				})
+			}
+			if me, err := h.authHandler.UsecaseHandler.GetUserByUserId(ctx, playerID); err == nil {
+				opponentWS.WriteJSON(map[string]interface{}{
+					"event": "opponent_joined",
+					"user":  me,
+				})
+			}
 		}
 	}
 
-	if opponentWS != nil {
-		me, err := h.authHandler.UsecaseHandler.GetUserByUserId(ctx, playerID)
-		if err == nil {
-			opponentWS.WriteJSON(map[string]interface{}{
-				"event": "opponent_joined",
-				"user":  me,
-			})
+	if role == "spectator" {
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
 		}
 	}
 
-	h.log.Infof("HandleStartGame: assigned WS slot for player %s game %s (opponent connected: %v)", playerID, gameKey, opponentWS != nil)
-
-	// 9) Цикл сообщений
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				h.log.Infof("HandleStartGame: client closed WS normally for player %s game %s: %v", playerID, gameKey, err)
-			} else {
-				h.log.Errorf("HandleStartGame: WS read error for player %s game %s: %v", playerID, gameKey, err)
-			}
 			return
 		}
 
 		var move game.Move
 		if err := json.Unmarshal(msg, &move); err != nil {
-			h.log.Warnf("HandleStartGame: invalid JSON from player %s game %s: %v", playerID, gameKey, err)
 			continue
 		}
-		h.log.Infof("HandleStartGame: received move from %s in game %s: %+v", playerID, gameKey, move)
 
 		moveInfo, err := h.gameUC.AddMoveToGameSgf(ctx, ag.Game.GameKeySecret, move)
 		if err != nil {
-			h.log.Errorf("HandleStartGame: AddMoveToGameSgf error for player %s game %s: %v", playerID, gameKey, err)
 			conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
 			continue
 		}
-
 		resp := game.GameStateResponse{Move: move, MoveInfo: *moveInfo}
-		h.log.Debugf("HandleStartGame: sending response %+v to opponent in game %s", resp, gameKey)
-
+		
 		activeGamesMu.Lock()
-		var opponentWS *websocket.Conn
-		if playerID == ag.Game.PlayerBlack {
-			opponentWS = ag.whiteWS
+		var oppWS *websocket.Conn
+		if role == "black" {
+			oppWS = ag.whiteWS
 		} else {
-			opponentWS = ag.blackWS
+			oppWS = ag.blackWS
+		}
+		spectators := make([]*websocket.Conn, 0, len(ag.spectators))
+		for ws := range ag.spectators {
+			spectators = append(spectators, ws)
 		}
 		activeGamesMu.Unlock()
 
-		if opponentWS != nil {
-			if err := opponentWS.WriteJSON(resp); err != nil {
-				h.log.Errorf("HandleStartGame: failed to send to opponent in game %s: %v", gameKey, err)
-				opponentWS.Close()
-				activeGamesMu.Lock()
-				if playerID == ag.Game.PlayerBlack {
-					ag.whiteWS = nil
-				} else {
-					ag.blackWS = nil
-				}
-				activeGamesMu.Unlock()
-			}
-		} else {
-			conn.WriteMessage(websocket.TextMessage, []byte("Opponent not connected"))
+		// отправляем
+		if oppWS != nil {
+			_ = oppWS.WriteJSON(resp)
+		}
+		for _, s := range spectators {
+			_ = s.WriteJSON(resp)
 		}
 
+		// финал партии
 		if resp.MoveInfo.IsGameFinished {
-			h.log.Infof("HandleStartGame: game finished for game %s", gameKey)
 			finished := map[string]string{"event": "game_finished"}
-			conn.WriteJSON(finished)
-			if opponentWS != nil {
-				opponentWS.WriteJSON(finished)
+			_ = conn.WriteJSON(finished)
+			if oppWS != nil {
+				_ = oppWS.WriteJSON(finished)
+			}
+			for _, s := range spectators {
+				_ = s.WriteJSON(finished)
 			}
 			return
 		}
