@@ -18,6 +18,7 @@ import (
 	repo "team_exe/internal/repository"
 	gameuc "team_exe/internal/usecase/game"
 	"team_exe/internal/utils"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
@@ -134,8 +135,18 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 
 	userID := g.authHandler.GetUserID(w, r)
 	if userID == "" {
-		g.log.Error("UserID не найден в cookie")
-		return
+		sessionID, newUserID, err := g.authHandler.UsecaseHandler.RegisterGhost()
+		userID = newUserID
+		if err != nil {
+			g.log.Error("ошибка создания призрачного юзера" + err.Error())
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     "sessionID",
+			Value:    sessionID,
+			Expires:  time.Now().Add(10 * time.Hour),
+			Secure:   false,
+			HttpOnly: true,
+		})
 	}
 	g.log.Infof("Новая игра от пользователя с id: %s", userID)
 

@@ -19,7 +19,7 @@ type UserStorage interface {
 	CheckExists(username string) bool
 	GetUser(username string) (user.User, bool)
 	GetUserByID(ctx context.Context, userID string) (user.User, error)
-	CreateUser(username, email, password string) (user.User, error)
+	CreateUser(username, email, password string, isGhost bool) (user.User, error)
 	AddResult(ctx context.Context, userID string, isWin bool, oppRating, oppRd, oppVolatility float64) error
 	UpdateRating(ctx context.Context, userID string, rating, rd, volatility float64) error
 }
@@ -45,7 +45,7 @@ func NewUserUsecaseHandler(u UserStorage, s SessionStorage) *UserUsecaseHandler 
 //   - errors.ErrInternal, если произошла внутренняя ошибка
 func (a *UserUsecaseHandler) RegisterUser(username, email, password string) (string, error) {
 	// TODO делать дополнительную валидацию username/email/password
-	createdUser, err := a.userStorage.CreateUser(username, email, password)
+	createdUser, err := a.userStorage.CreateUser(username, email, password, false)
 	if err != nil {
 		return "", err
 	}
@@ -54,6 +54,18 @@ func (a *UserUsecaseHandler) RegisterUser(username, email, password string) (str
 		return "", err
 	}
 	return sessionID, nil
+}
+
+func (a *UserUsecaseHandler) RegisterGhost() (sessionID string, userID string, err error) {
+	createdUser, err := a.userStorage.CreateUser("ghost_"+random.RandString(10), "", "ghost", true)
+	if err != nil {
+		return "", "", err
+	}
+	sessionID, err = a.LoginUser(createdUser.Username, "ghost")
+	if err != nil {
+		return "", "", err
+	}
+	return sessionID, createdUser.ID, nil
 }
 
 // CheckAuthorized проверяет, есть ли валидная сессия по данному sessionID.
