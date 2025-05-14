@@ -51,7 +51,7 @@ func (m *MongoUserStorage) GetUser(username string) (user.User, bool) {
 
 // CreateUser создает новую запись пользователя.
 // Может вернуть errors.ErrUserExists, если такой username уже существует.
-func (m *MongoUserStorage) CreateUser(username, email, password string) (user.User, error) {
+func (m *MongoUserStorage) CreateUser(username, email, password string, isGhost bool) (user.User, error) {
 	// Проверяем, что пользователя ещё не существует.
 	_, found := m.GetUser(username)
 	if found {
@@ -64,6 +64,7 @@ func (m *MongoUserStorage) CreateUser(username, email, password string) (user.Us
 		Email:          email,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
+		IsGhost:        isGhost,
 		Rating:         0,
 		CurrentGameKey: "",
 		AvatarURL:      "",

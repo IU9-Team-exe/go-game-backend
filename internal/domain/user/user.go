@@ -9,6 +9,7 @@ type User struct {
 	Email          string            `json:"email" bson:"email"`
 	CreatedAt      time.Time         `json:"created_at" bson:"created_at"`
 	UpdatedAt      time.Time         `json:"updated_at" bson:"updated_at"`
+	IsGhost        bool              `json:"is_ghost" bson:"is_ghost"` // ghost -- пользователь созданный автоматически игре без аккаунта
 	Rating         int               `json:"rating" bson:"rating"`
 	CurrentGameKey string            `json:"current_game_key,omitempty" bson:"current_game_key,omitempty"`
 	AvatarURL      string            `json:"avatar_url,omitempty" bson:"avatar_url,omitempty"`
