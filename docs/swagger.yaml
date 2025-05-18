@@ -434,6 +434,9 @@ definitions:
         type: string
       id:
         type: string
+      is_ghost:
+        description: ghost -- пользователь созданный автоматически игре без аккаунта
+        type: boolean
       passwordHash:
         type: string
       passwordSalt:
@@ -609,6 +612,24 @@ paths:
       summary: Анализ текущей игры
       tags:
       - game
+  /checkAuthorized:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/httpresponse.Response'
+        "400":
+          description: Нет cookie
+          schema:
+            $ref: '#/definitions/httpresponse.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Проверка авторизации
+      tags:
+      - auth
   /generateMove:
     post:
       consumes:

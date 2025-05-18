@@ -8,10 +8,11 @@ import (
 	"syscall"
 	"time"
 
+	_ "team_exe/docs"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
-	_ "team_exe/docs"
 
 	httpSwagger "github.com/swaggo/http-swagger"
 
@@ -93,6 +94,7 @@ func (h *mainDeliveryHandler) Router(r *chi.Mux, isLocalCors bool) {
 	r.Post("/logout", h.auth.Logout)
 	r.Post("/register", h.auth.Register)
 	r.Post("/updateUserData", h.auth.UpdateUser)
+	r.Get("/checkAuthorized", h.auth.CheckAuthorized)
 
 	r.Post("/NewGame", h.game.HandleNewGame)
 	r.Post("/JoinGame", h.game.HandleJoinGame)

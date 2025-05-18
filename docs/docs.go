@@ -255,6 +255,36 @@ const docTemplate = `{
                 }
             }
         },
+        "/checkAuthorized": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Проверка авторизации",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Нет cookie",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/generateMove": {
             "post": {
                 "security": [
@@ -1830,6 +1860,10 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "is_ghost": {
+                    "description": "ghost -- пользователь созданный автоматически игре без аккаунта",
+                    "type": "boolean"
                 },
                 "passwordHash": {
                     "type": "string"

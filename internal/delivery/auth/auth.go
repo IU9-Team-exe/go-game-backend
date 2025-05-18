@@ -192,6 +192,36 @@ func (a *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", nil)
 }
 
+// CheckAuthorized godoc
+// @Summary      Проверка авторизации
+// @Tags         auth
+// @Security     ApiKeyAuth
+// @Produce      json
+// @Success      200  {object}  httpresponse.Response
+// @Failure      400  {object}  httpresponse.Response          "Нет cookie"
+// @Router       /checkAuthorized [get]
+func (a *AuthHandler) CheckAuthorized(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("sessionID")
+	if err != nil {
+		if errors.Is(err, http.ErrNoCookie) {
+			a.log.Warn("CheckAuthorized: missing cookie")
+			httpresponse.WriteAPIError(w, http.StatusBadRequest, "missing_cookie", "sessionID cookie is required")
+		} else {
+			a.log.Error("CheckAuthorized: cookie error:", err)
+			httpresponse.WriteInternalErrorResponse(w)
+		}
+		return
+	}
+	_, err = a.UsecaseHandler.GetUserIdFromSession(cookie.Value)
+	if err != nil {
+		status, code := errs.TranslateErr(err)
+		a.log.Warn("CheckAuthorized: session lookup failed:", err)
+		httpresponse.WriteAPIError(w, status, code, err.Error())
+		return
+	}
+	httpresponse.WriteResponseWithStatus(w, http.StatusOK, "", nil)
+}
+
 // GetUserID возвращает из сессии идентификатор пользователя.
 // Если сессия просрочена или не найдена, пишет ошибку в http-ответ и возвращает "".
 func (a *AuthHandler) GetUserID(w http.ResponseWriter, r *http.Request) string {

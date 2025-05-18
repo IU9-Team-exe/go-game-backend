@@ -38,3 +38,7 @@ dump.tar.gz
 dump
 
 scrapper
+
+nginx/default.debug.conf
+docker-compose.debug.yml
+Dockerfile.debug
