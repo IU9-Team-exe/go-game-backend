@@ -142,6 +142,9 @@ func (a *UserUsecaseHandler) AddResult(userID string, isWin bool, oppRating, opp
 }
 
 func (a *UserUsecaseHandler) UpdateRating(userID string, rating, rd, volatility float64) error {
+	if rating == 0.0 || rd == 0.0 || volatility == 0.0 {
+		return nil
+	}
 	err := a.userStorage.UpdateRating(context.Background(), userID, rating, rd, volatility)
 	if err != nil {
 		return err
