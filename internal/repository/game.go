@@ -295,8 +295,11 @@ func (g *GameRepository) LoadSGFFromRedis(ctx context.Context, key string) (stri
 }
 
 func (g *GameRepository) ParseSGF(sgfText string) (*game.Game, error) {
+	g.log.Infof("ParseSGF: %s", sgfText)
+
 	var result game.Game
-	if m := regexp.MustCompile(`C\[id:([^\]]+)\]`).FindStringSubmatch(sgfText); m != nil {
+	if m := regexp.MustCompile(`C\[([^\]]+)\]`).FindStringSubmatch(sgfText); m != nil {
+
 		result.GameKeySecret = m[1]
 	}
 

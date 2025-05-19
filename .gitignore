@@ -39,6 +39,4 @@ dump
 
 scrapper
 
-nginx/default.debug.conf
-docker-compose.debug.yml
-Dockerfile.debug
+test

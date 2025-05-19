@@ -179,7 +179,6 @@ func (g *GameHandler) HandleNewGame(w http.ResponseWriter, r *http.Request) {
 	createdPlay, err := g.gameUC.CreateGame(r.Context(), newGameRequest, userID)
 	if err != nil {
 		status, code := errs.TranslateErr(err)
-		// если это ErrUserAlreadyInGame, дополняем тело данными
 		if errors.Is(err, errs.ErrUserAlreadyInGame) && createdPlay != nil {
 			resp := AlreadyInGameResponse{
 				Error:       code,
@@ -378,17 +377,32 @@ func (h *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 
 	defer func() {
 		activeGamesMu.Lock()
+		defer activeGamesMu.Unlock()
+
 		if role == "spectator" {
 			delete(ag.spectators, conn)
-		} else {
-			if role == "black" && ag.blackWS == conn {
+		} else if role == "black" {
+			if ag.blackWS == conn {
 				ag.blackWS = nil
+				if ag.whiteWS != nil {
+					_ = ag.whiteWS.WriteJSON(map[string]string{
+						"event": "opponent_left",
+						"who":   "black",
+					})
+				}
 			}
-			if role == "white" && ag.whiteWS == conn {
+		} else {
+			if ag.whiteWS == conn {
 				ag.whiteWS = nil
+				if ag.blackWS != nil {
+					_ = ag.blackWS.WriteJSON(map[string]string{
+						"event": "opponent_left",
+						"who":   "white",
+					})
+				}
 			}
 		}
-		activeGamesMu.Unlock()
+
 		conn.Close()
 	}()
 
@@ -459,7 +473,7 @@ func (h *GameHandler) HandleStartGame(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		resp := game.GameStateResponse{Move: move, MoveInfo: *moveInfo}
-		
+
 		activeGamesMu.Lock()
 		var oppWS *websocket.Conn
 		if role == "black" {

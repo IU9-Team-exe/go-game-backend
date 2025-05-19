@@ -15,6 +15,7 @@ import (
 	"team_exe/internal/statuses"
 	"team_exe/internal/usecase/auth"
 	"team_exe/internal/usecase/katago"
+	validator "team_exe/validator"
 )
 
 type GameStore interface {
@@ -62,12 +63,7 @@ func NewGameUseCase(store GameStore, authUC *auth.UserUsecaseHandler, kata *kata
 	}
 }
 
-// -----------------------------------------------------------------------------
-//  GAME CREATION
-// -----------------------------------------------------------------------------
-
 func (g *GameUseCase) CreateGame(ctx context.Context, req game.CreateGameRequest, creatorID string) (*game.Game, error) {
-	// forbid multiple simultaneous human-games
 	active, err := g.HasUserActiveGamesByUserId(ctx, creatorID)
 	if err != nil {
 		return nil, err
@@ -274,7 +270,7 @@ func (g *GameUseCase) PrepareSgfFile(data game.Game) sgf.SGF {
 					"DT": {data.CreatedAt.Format(time.RFC3339)},
 					"KM": {strconv.FormatFloat(data.Komi, 'f', 1, 64)},
 					"RU": {"Chinese"},
-					"C":  {fmt.Sprintf("id:%s", data.GameKeySecret)},
+					"C":  {fmt.Sprintf("%s", data.GameKeySecret)},
 				},
 			}},
 		},
@@ -338,8 +334,17 @@ func serializeGameTree(b *strings.Builder, tree *sgf.GameTree) {
 // -----------------------------------------------------------------------------
 
 func (g *GameUseCase) AddMoveToGameSgf(ctx context.Context, key string, mv game.Move) (*game.MoveInfoWS, error) {
-	old, _ := g.GetSgfStringByGameKey(ctx, key)
-	play, _ := g.store.ParseSGF(old)
+	old, err := g.GetSgfStringByGameKey(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
+	play, err := g.store.ParseSGF(old)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("game key secret: ", play.GameKeySecret)
 
 	if len(play.Moves) == 0 {
 		now := time.Now()
@@ -347,26 +352,65 @@ func (g *GameUseCase) AddMoveToGameSgf(ctx context.Context, key string, mv game.
 		play.Status = statuses.StatusInProgress
 	}
 
-	kataMoves := append(play.Moves, mv)
-	kataResp, err := g.katagoUsecase.CheckMove(ctx, play.GameKeySecret, &game.Moves{Moves: kataMoves}, play.BoardSize, play.Rules)
-
 	resp := &game.MoveInfoWS{NewSgf: old}
-	if err != nil || kataResp.Error != "" {
+
+	validatorMoves, err := validator.ParseOldMoves(play.Moves, play.BoardSize)
+	if err != nil {
 		resp.IsMoveCorrect = false
-		if kataResp != nil {
-			resp.Error = kataResp.Error
-		} else {
-			resp.Error = "kataResp is nil"
-		}
+		resp.Error = err.Error()
 		return resp, nil
 	}
 
-	raw := kataToSgf(mv.Coordinates, play.BoardSize)
-	newSgf := fmt.Sprintf("%s;%s[%s])", strings.TrimSuffix(old, ")"), mv.Color, raw)
+	newValidatorMove, err := validator.ConvertOne(mv, play.BoardSize)
+	if err != nil {
+		resp.IsMoveCorrect = false
+		resp.Error = err.Error()
+		return resp, nil
+	}
+
+	err = validator.ValidateMove(play.BoardSize, validatorMoves, newValidatorMove)
+	correctMoves := append(play.Moves, mv)
+
+	if err != nil {
+		resp.IsMoveCorrect = false
+		resp.Error = err.Error()
+		return resp, nil
+	}
+
 	resp.IsMoveCorrect = true
+
+	var colProp string
+	switch newValidatorMove.Color {
+	case validator.Black:
+		colProp = "B"
+	case validator.White:
+		colProp = "W"
+	default:
+		return nil, fmt.Errorf("unexpected color: %v", newValidatorMove.Color)
+	}
+
+	// сформируем текст хода
+	var moveText string
+	if newValidatorMove.Pass {
+		moveText = fmt.Sprintf(";%s[]", colProp)
+	} else {
+		raw := kataToSgf(mv.Coordinates, play.BoardSize)
+		moveText = fmt.Sprintf(";%s[%s]", colProp, raw)
+	}
+
+	// “приклеиваем” ход в конце дерева
+	base := strings.TrimSuffix(old, ")")
+	newSgf := base + moveText + ")"
+
 	resp.NewSgf = newSgf
 
 	if err = g.store.SaveSGFToRedis(ctx, key, newSgf); err != nil {
+		return nil, err
+	}
+	if err = g.store.SaveSGFToMongo(ctx, play.GameKeySecret, newSgf); err != nil {
+		return nil, err
+	}
+	if err = g.store.SaveMovesToMongo(ctx, play.GameKeySecret, correctMoves); err != nil {
 		return nil, err
 	}
 

@@ -114,16 +114,24 @@ func (t *TaskStorage) GetTasksWithStatusPaginated(
 	pageNum int,
 ) (*task.TaskResponse, error) {
 
+	objID, err := primitive.ObjectIDFromHex(userIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
+
 	var user struct {
 		TasksDone []int `bson:"done_tasks_ids"`
 	}
 
-	err := t.mongo.Database.Collection("users").
-		FindOne(ctx, bson.M{"_id": userIDStr}).
+	err = t.mongo.Database.Collection("users").
+		FindOne(ctx, bson.M{"_id": objID}).
 		Decode(&user)
 
-	if !errors.Is(err, mongo.ErrNoDocuments) {
-		return nil, fmt.Errorf("user not found: %w", err)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("mongo error: %w", err)
 	}
 
 	filter := bson.M{"task_level": taskLevel}
@@ -181,6 +189,7 @@ func (t *TaskStorage) GetTasksWithStatusPaginated(
 		Tasks:              allTasks[start:end],
 	}, nil
 }
+
 func (t *TaskStorage) TaskIsDone(ctx context.Context, taskUniqNumber int, userID string) (bool, error) {
 	collection := t.mongo.Database.Collection("users")
 
