@@ -17,8 +17,8 @@ type User struct {
 	SocialLinks    map[string]string `json:"social_links,omitempty" bson:"social_links,omitempty"`
 	Coins          int               `json:"coins" bson:"coins"`
 	Statistic      UserStatistic     `json:"statistic" bson:"statistic"`
-	PasswordHash   string            `bson:"password_hash"`
-	PasswordSalt   string            `bson:"password_salt"`
+	PasswordHash   string            `json:"-" bson:"password_hash"`
+	PasswordSalt   string            `json:"-" bson:"password_salt"`
 	DoneTasksIds   []int             `json:"done_tasks_ids" bson:"done_tasks_ids"`
 }
 
